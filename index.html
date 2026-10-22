@@ -50,9 +50,8 @@
   .empty{grid-column:1/-1;color:var(--muted)}
   .sort{font:inherit;font-size:14px;font-weight:600;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:8px 12px}
   .pic{position:relative;cursor:zoom-in}
-  .big{position:absolute;top:8px;right:8px;width:34px;height:34px;border-radius:10px;border:0;display:grid;place-items:center;cursor:pointer;
-    background:rgba(15,21,20,.55);color:#fff}
-  .big svg,.heart svg{width:18px;height:18px}
+  .pic:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+  .heart svg{width:18px;height:18px}
   .row{margin-top:auto;display:flex;gap:8px;align-items:center}
   .row .add{flex:1;margin:0}
   .heart{display:flex;align-items:center;gap:6px;font:inherit;font-weight:600;font-size:14px;color:var(--muted);background:transparent;
@@ -115,7 +114,6 @@
 const list=document.getElementById('list'),find=document.getElementById('find'),sort=document.getElementById('sort'),view=document.getElementById('view');
 let all=[],shown=[];
 const svgURL=svg=>'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
-const ICON_BIG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
 const ICON_HEART='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>';
 // Hearts: each drawing's count (from the server, once there is one; "hearts" in drawings.json until then) and
 // whether you hearted it (kept in this browser), so "Most hearted" sorts by them
@@ -140,10 +138,11 @@ function show(){
   if(sort.value==='hearts')shown=shown.map((d,i)=>[d,i]).sort((x,y)=>hearts(y[0])-hearts(x[0])||x[1]-y[1]).map(x=>x[0]);
   list.replaceChildren(...shown.map(d=>{
     const a=document.createElement('article');a.className='card';
-    a.innerHTML='<div class="pic"><img alt=""><canvas></canvas><button class="big" type="button">'+ICON_BIG+'</button></div><h2></h2><p></p><ul class="tags"></ul><div class="row"><button class="heart" type="button"></button><a class="add">Add to my Doot</a></div>';
+    a.innerHTML='<div class="pic"><img alt=""><canvas></canvas></div><h2></h2><p></p><ul class="tags"></ul><div class="row"><button class="heart" type="button"></button><a class="add">Add to my Doot</a></div>';
     const img=a.querySelector('img');img.src=svgURL(d.svg);img.alt=d.title;
-    a.querySelector('.big').setAttribute('aria-label','Show '+d.title+' full screen');
-    a.querySelector('.pic').addEventListener('click',()=>openView(d));
+    const pic=a.querySelector('.pic');pic.tabIndex=0;pic.setAttribute('role','button');pic.setAttribute('aria-label','Show '+d.title+' full screen');
+    pic.addEventListener('click',()=>openView(d));
+    pic.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openView(d);}});
     const hb=a.querySelector('.heart');hb.dataset.heart=d.id;heartButton(hb,d);hb.addEventListener('click',()=>{toggleHeart(d);if(sort.value==='hearts')show();});
     if(d.moves){const m=document.createElement('span');m.className='moves';m.textContent='Animation';a.querySelector('.pic').after(m);}
     a.querySelector('h2').textContent=d.title;a.querySelector('p').textContent=d.blurb||'';
