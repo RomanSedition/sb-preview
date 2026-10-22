@@ -45,6 +45,33 @@
   .add{margin-top:auto;display:block;text-align:center;text-decoration:none;font-weight:600;color:#10201C;background:var(--mint);border-radius:999px;padding:9px 14px}
   .add:active{opacity:.8}
   .empty{grid-column:1/-1;color:var(--muted)}
+  .sort{font:inherit;font-size:14px;font-weight:600;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:8px 12px}
+  .pic{position:relative;cursor:zoom-in}
+  .big{position:absolute;top:8px;right:8px;width:34px;height:34px;border-radius:10px;border:0;display:grid;place-items:center;cursor:pointer;
+    background:rgba(15,21,20,.55);color:#fff}
+  .big svg,.heart svg{width:18px;height:18px}
+  .row{margin-top:auto;display:flex;gap:8px;align-items:center}
+  .row .add{flex:1;margin:0}
+  .heart{display:flex;align-items:center;gap:6px;font:inherit;font-weight:600;font-size:14px;color:var(--muted);background:transparent;
+    border:1px solid var(--line);border-radius:999px;padding:8px 12px;cursor:pointer}
+  .heart[aria-pressed="true"]{color:var(--orange);border-color:var(--orange)}
+  .heart[aria-pressed="true"] path{fill:currentColor}
+  /* full screen: one drawing as big as fits, with its words and buttons below; swipe or the arrows for the next */
+  #view{position:fixed;inset:0;z-index:10;background:#0D1720;display:flex;flex-direction:column;align-items:center;gap:12px;
+    padding:max(14px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));touch-action:pan-y}
+  #view[hidden]{display:none}
+  #view .vtop{align-self:stretch;display:flex;justify-content:space-between;align-items:center}
+  #view .vpos{color:var(--muted);font-size:13px}
+  #view .x{width:40px;height:40px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--fg);font-size:22px;cursor:pointer}
+  #view .vpic{flex:1;min-height:0;width:100%;max-width:min(92vw,640px);display:grid;place-items:center;border-radius:18px;background:var(--paper);padding:5%}
+  #view .vpic img,#view .vpic canvas{width:100%;height:100%;object-fit:contain}
+  body.led #view .vpic{background:#0D1720}
+  body.led #view .vpic img,body:not(.led) #view .vpic canvas{display:none}
+  #view h2{margin:0;font-size:20px;text-align:center}
+  #view p{margin:0;color:var(--muted);text-align:center;max-width:52ch}
+  #view .row{margin:0;width:100%;max-width:420px}
+  #view .nav{display:flex;gap:10px}
+  #view .nav button{font:inherit;font-weight:600;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:8px 16px;cursor:pointer}
   footer{max-width:1100px;margin:0 auto;padding:0 16px 32px;color:var(--muted);font-size:13px}
 </style>
 </head>
@@ -54,25 +81,53 @@
     <p class="lede">Drawings from Doot’s Scrappy Book. Tap <b>Add to my Doot</b> on your phone to put one in yours.</p>
   </header>
   <div class="find"><input id="find" type="search" placeholder="Find a drawing" aria-label="Find a drawing">
-    <div class="look" role="group" aria-label="Show drawings as"><button type="button" data-look="smooth">Smooth</button><button type="button" data-look="led">LED</button></div></div>
+    <div class="look" role="group" aria-label="Show drawings as"><button type="button" data-look="smooth">Smooth</button><button type="button" data-look="led">LED</button></div>
+    <select class="sort" id="sort" aria-label="Sort by"><option value="new">Newest</option><option value="hearts">Most hearted</option></select></div>
   <main id="list"></main>
-  <footer>A test page, not public yet.</footer>
+  <footer>A test page, not public yet. Hearts are kept in this browser for now.</footer>
+  <div id="view" role="dialog" aria-modal="true" aria-label="Drawing" hidden>
+    <div class="vtop"><span class="vpos"></span><button class="x" type="button" aria-label="Close">×</button></div>
+    <div class="vpic"><img alt=""><canvas></canvas></div>
+    <h2></h2><p></p>
+    <div class="row"><button class="heart" type="button"></button><a class="add">Add to my Doot</a></div>
+    <div class="nav"><button type="button" data-step="-1">‹ Previous</button><button type="button" data-step="1">Next ›</button></div>
+  </div>
 <script>
 // Each drawing is shown as an image (so nothing in it can run; animations still play), and "Add to my Doot" opens
 // the app with the address of the drawing's own file, which the app fetches and adds to its Scrappy Book.
-const list=document.getElementById('list'),find=document.getElementById('find');
-let all=[];
+const list=document.getElementById('list'),find=document.getElementById('find'),sort=document.getElementById('sort'),view=document.getElementById('view');
+let all=[],shown=[];
+const svgURL=svg=>'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+const ICON_BIG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+const ICON_HEART='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>';
+// Hearts: each drawing's count (from the server, once there is one; "hearts" in drawings.json until then) and
+// whether you hearted it (kept in this browser), so "Most hearted" sorts by them
+let mine=new Set();try{mine=new Set(JSON.parse(localStorage.getItem('sb.hearts')||'[]'))}catch(e){}
+const hearts=d=>(d.hearts||0)+(mine.has(d.id)?1:0);
+function heartButton(b,d){
+  b.innerHTML=ICON_HEART+'<span></span>';b.querySelector('span').textContent=hearts(d);
+  b.setAttribute('aria-pressed',String(mine.has(d.id)));b.setAttribute('aria-label',(mine.has(d.id)?'Take your heart off ':'Heart ')+d.title+', '+hearts(d)+' hearts');
+}
+function toggleHeart(d){
+  mine.has(d.id)?mine.delete(d.id):mine.add(d.id);
+  try{localStorage.setItem('sb.hearts',JSON.stringify([...mine]))}catch(e){}
+  document.querySelectorAll('[data-heart="'+d.id+'"]').forEach(b=>heartButton(b,d));
+}
 const addLink=d=>{
   const src=new URL('d/'+d.id+'.json',location.href).href;
   return 'intent://add?src='+encodeURIComponent(src)+'#Intent;scheme=doot;package=com.romansedition.doot;end';
 };
 function show(){
   const q=find.value.trim().toLowerCase();
-  const shown=all.filter(d=>!q||[d.title,d.blurb,...(d.tags||[])].join(' ').toLowerCase().includes(q));
+  shown=all.filter(d=>!q||[d.title,d.blurb,...(d.tags||[])].join(' ').toLowerCase().includes(q));
+  if(sort.value==='hearts')shown=shown.map((d,i)=>[d,i]).sort((x,y)=>hearts(y[0])-hearts(x[0])||x[1]-y[1]).map(x=>x[0]);
   list.replaceChildren(...shown.map(d=>{
     const a=document.createElement('article');a.className='card';
-    a.innerHTML='<div class="pic"><img alt=""><canvas></canvas></div><h2></h2><p></p><ul class="tags"></ul><a class="add">Add to my Doot</a>';
-    const img=a.querySelector('img');img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(d.svg);img.alt=d.title;
+    a.innerHTML='<div class="pic"><img alt=""><canvas></canvas><button class="big" type="button">'+ICON_BIG+'</button></div><h2></h2><p></p><ul class="tags"></ul><div class="row"><button class="heart" type="button"></button><a class="add">Add to my Doot</a></div>';
+    const img=a.querySelector('img');img.src=svgURL(d.svg);img.alt=d.title;
+    a.querySelector('.big').setAttribute('aria-label','Show '+d.title+' full screen');
+    a.querySelector('.pic').addEventListener('click',()=>openView(d));
+    const hb=a.querySelector('.heart');hb.dataset.heart=d.id;heartButton(hb,d);hb.addEventListener('click',()=>{toggleHeart(d);if(sort.value==='hearts')show();});
     if(d.moves){const m=document.createElement('span');m.className='moves';m.textContent='Animation';a.querySelector('.pic').after(m);}
     a.querySelector('h2').textContent=d.title;a.querySelector('p').textContent=d.blurb||'';
     a.querySelector('.tags').replaceChildren(...(d.tags||[]).map(t=>{const li=document.createElement('li');li.textContent=t;return li;}));
@@ -83,6 +138,28 @@ function show(){
   if(!shown.length)list.innerHTML='<p class="empty">No drawings match that.</p>';
 }
 find.addEventListener('input',show);
+sort.addEventListener('change',show);
+
+// full screen
+let viewing=null;
+function openView(d){
+  viewing=d;view.hidden=!d;document.body.style.overflow=d?'hidden':'';if(!d)return;
+  const img=view.querySelector('img');img.src=svgURL(d.svg);img.alt=d.title;
+  view.querySelector('h2').textContent=d.title;view.querySelector('p').textContent=d.blurb||'';
+  const hb=view.querySelector('.heart');hb.dataset.heart=d.id;heartButton(hb,d);
+  view.querySelector('.add').href=addLink(d);
+  const i=shown.indexOf(d);view.querySelector('.vpos').textContent=shown.length>1?(i+1)+' of '+shown.length:'';
+  leds.set(view.querySelector('canvas'),{img,svg:d.svg,moves:d.moves,drawn:false,cols:100});
+  view.querySelector('.x').focus();
+}
+const step=by=>{const i=shown.indexOf(viewing),n=shown[i+by];if(n)openView(n);};
+view.querySelector('.x').addEventListener('click',()=>openView(null));
+view.querySelector('.heart').addEventListener('click',()=>{if(viewing){toggleHeart(viewing);}});
+view.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>step(+b.dataset.step)));
+addEventListener('keydown',e=>{if(view.hidden)return;if(e.key==='Escape')openView(null);else if(e.key==='ArrowRight')step(1);else if(e.key==='ArrowLeft')step(-1);});
+let sw=null;
+view.addEventListener('pointerdown',e=>{sw={x:e.clientX,y:e.clientY};});
+view.addEventListener('pointerup',e=>{if(!sw)return;const dx=e.clientX-sw.x,dy=e.clientY-sw.y;sw=null;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.5)step(dx<0?1:-1);});
 
 // LED: each drawing drawn as Doot's screen shows it: on a grid of round lights, its dark lines lit in Doot's mint
 // (they'd vanish on the dark screen otherwise), each light at one of three brightnesses. An animation is played from
@@ -90,8 +167,9 @@ find.addEventListener('input',show);
 const COLS=64,MINT=[99,227,200],leds=new Map();
 let look='smooth';try{look=localStorage.getItem('sb.look')||'smooth'}catch(e){}
 if(location.hash==='#led'||location.hash==='#smooth')look=location.hash.slice(1); // a link can say which
-const small=document.createElement('canvas');small.width=small.height=COLS;const sx=small.getContext('2d',{willReadFrequently:true});
-function paint(c,img){
+const smalls={};
+function paint(c,img,COLS=64){
+  const small=smalls[COLS]||(smalls[COLS]=Object.assign(document.createElement('canvas'),{width:COLS,height:COLS})),sx=small.getContext('2d',{willReadFrequently:true});
   const dp=Math.min(devicePixelRatio||1,2),w=Math.round(c.clientWidth*dp)||300;
   if(c.width!==w){c.width=c.height=w;}
   sx.clearRect(0,0,COLS,COLS);sx.drawImage(img,0,0,COLS,COLS);
@@ -135,7 +213,7 @@ function tick(t){
     let img=s.img;
     if(s.moves){framesOf(s);img=s.frames[Math.floor(t/1000*s.fps)%s.frames.length];}
     if(!img.complete||!img.naturalWidth)continue;
-    paint(c,img);s.drawn=true;
+    paint(c,img,s.cols);s.drawn=true;
   }
 }
 requestAnimationFrame(tick);
