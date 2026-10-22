@@ -77,7 +77,7 @@ function show(){
     a.querySelector('h2').textContent=d.title;a.querySelector('p').textContent=d.blurb||'';
     a.querySelector('.tags').replaceChildren(...(d.tags||[]).map(t=>{const li=document.createElement('li');li.textContent=t;return li;}));
     a.querySelector('.add').href=addLink(d);
-    leds.set(a.querySelector('canvas'),{img,moves:d.moves,drawn:false});
+    leds.set(a.querySelector('canvas'),{img,svg:d.svg,moves:d.moves,drawn:false});
     return a;
   }));
   if(!shown.length)list.innerHTML='<p class="empty">No drawings match that.</p>';
@@ -85,8 +85,8 @@ function show(){
 find.addEventListener('input',show);
 
 // LED: each drawing drawn as Doot's screen shows it: on a grid of round lights, its dark lines lit in Doot's mint
-// (they'd vanish on the dark screen otherwise), each light at one of three brightnesses. An animation is redrawn as
-// it plays (its image keeps moving), only while it's on screen.
+// (they'd vanish on the dark screen otherwise), each light at one of three brightnesses. An animation is played from
+// frames made once (a hidden image stops moving), each the drawing at one moment of its loop, only while on screen.
 const COLS=64,MINT=[99,227,200],leds=new Map();
 let look='smooth';try{look=localStorage.getItem('sb.look')||'smooth'}catch(e){}
 if(location.hash==='#led'||location.hash==='#smooth')look=location.hash.slice(1); // a link can say which
@@ -109,15 +109,33 @@ function paint(c,img){
   }
   g.shadowBlur=0;
 }
+// an animation's frames: the SVG with every animation begun [t] seconds earlier shows its moment [t]
+const ANIM=/<(animate|animateTransform|animateMotion|set)\b/gi;
+function loopOf(svg){let most=0;for(const m of svg.matchAll(/\sdur\s*=\s*["']([\d.]+)(ms|s)?["']/gi)){const v=+m[1]*(m[2]==='ms'?.001:1);if(v>most)most=v;}return Math.min(6,Math.max(.5,most||2));}
+function at(svg,t){
+  return svg.replace(/<(animate|animateTransform|animateMotion|set)\b([^>]*?)(\/?)>/gi,(all,tag,attrs,close)=>{
+    const b=attrs.match(/\sbegin\s*=\s*(["'])([^"']*)\1/i);
+    if(!b)return `<${tag}${attrs} begin="${-t}s"${close}>`;
+    const v=b[2].trim().match(/^(-?[\d.]+)(ms|s)?$/);if(!v)return all;
+    return `<${tag}${attrs.replace(b[0],` begin="${+v[1]*(v[2]==='ms'?.001:1)-t}s"`)}${close}>`;
+  });
+}
+function framesOf(s){
+  if(s.frames)return;const loop=loopOf(s.svg),n=Math.min(24,Math.max(8,Math.round(loop*10)));
+  s.fps=n/loop;s.frames=Array.from({length:n},(_,i)=>{const im=new Image();im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(at(s.svg,i*loop/n));return im;});
+}
 let last=0;
 function tick(t){
   requestAnimationFrame(tick);
   if(look!=='led'||t-last<90)return;last=t; // about 11 frames a second is plenty for the lights
   for(const [c,s] of leds){
     if(!c.isConnected){leds.delete(c);continue;}
-    if(!s.img.complete||!s.img.naturalWidth||(s.drawn&&!s.moves))continue;
+    if(s.drawn&&!s.moves)continue;
     const b=c.getBoundingClientRect();if(b.bottom<0||b.top>innerHeight)continue;
-    paint(c,s.img);s.drawn=true;
+    let img=s.img;
+    if(s.moves){framesOf(s);img=s.frames[Math.floor(t/1000*s.fps)%s.frames.length];}
+    if(!img.complete||!img.naturalWidth)continue;
+    paint(c,img);s.drawn=true;
   }
 }
 requestAnimationFrame(tick);
