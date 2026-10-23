@@ -179,7 +179,9 @@
 // the app with the address of the drawing's own file, which the app fetches and adds to its Scrappy Book.
 const list=document.getElementById('list'),find=document.getElementById('find'),sort=document.getElementById('sort'),view=document.getElementById('view');
 let all=[],shown=[];
-const svgURL=svg=>'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+// as an image: a browser needs an SVG to say what it is (xmlns), which many of Doot's drawings leave out
+const withNS=svg=>/^\s*<svg\b[^>]*\sxmlns\s*=/i.test(svg)?svg:String(svg).replace(/^\s*<svg\b/i,'<svg xmlns="http://www.w3.org/2000/svg"');
+const svgURL=svg=>'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(withNS(svg));
 const ICON_HEART='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>';
 // The server (Supabase): hearts, comments and who's signed in. Anyone can look; hearting and commenting need
 // signing in with Google. Its rules (in supabase/schema.sql) let people change only their own things.
@@ -479,7 +481,7 @@ function at(svg,t){
 }
 function framesOf(s){
   if(s.frames)return;const loop=loopOf(s.svg),n=Math.min(24,Math.max(8,Math.round(loop*10)));
-  s.fps=n/loop;s.frames=Array.from({length:n},(_,i)=>{const im=new Image();im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(at(s.svg,i*loop/n));return im;});
+  s.fps=n/loop;s.frames=Array.from({length:n},(_,i)=>{const im=new Image();im.src=svgURL(at(s.svg,i*loop/n));return im;});
 }
 let last=0;
 function tick(t){
