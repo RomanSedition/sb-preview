@@ -245,7 +245,8 @@ function show(){
     const hb=a.querySelector('.heart');hb.dataset.heart=d.id;heartButton(hb,d);hb.addEventListener('click',()=>{toggleHeart(d);if(sort.value==='hearts')show();});
     if(d.moves){const m=document.createElement('span');m.className='moves';m.textContent='Animation';a.querySelector('.pic').after(m);}
     a.querySelector('h2').textContent=d.title;a.querySelector('p').textContent=d.blurb||'';
-    if(d.by){const by=document.createElement('span');by.className='by';by.textContent='Shared by '+d.by;const x=deleteLink(d);if(x)by.append(' · ',x);a.querySelector('h2').after(by);}
+    const dx=deleteLink(d);
+    if(d.by||dx){const by=document.createElement('span');by.className='by';by.textContent=d.by?'Shared by '+d.by:'';if(dx){if(d.by)by.append(' · ');by.append(dx);}a.querySelector('h2').after(by);}
     a.querySelector('.tags').replaceChildren(...(d.tags||[]).map(t=>{const li=document.createElement('li');li.textContent=t;return li;}));
     addButton(a.querySelector('.add'),d);
     leds.set(a.querySelector('canvas'),{img,svg:d.svg,moves:d.moves,drawn:false});
@@ -267,7 +268,7 @@ function openView(d,toComments){
   const img=view.querySelector('img');img.src=svgURL(d.svg);img.alt=d.title;
   view.querySelector('h2').textContent=d.title;view.querySelector('p').textContent=d.blurb||'';
   const vby=view.querySelector('.vby');vby.replaceChildren();
-  if(d.by){vby.append('Shared by '+d.by);const x=deleteLink(d);if(x)vby.append(' · ',x);}
+  const vx=deleteLink(d);if(d.by)vby.append('Shared by '+d.by);if(vx){if(d.by)vby.append(' · ');vby.append(vx);}
   const hb=view.querySelector('.heart');hb.dataset.heart=d.id;heartButton(hb,d);
   const va=view.querySelector('.add'),fresh=va.cloneNode(true);va.replaceWith(fresh);addButton(fresh,d); // no handlers from the last drawing
   const i=shown.indexOf(d);view.querySelector('.vpos').textContent=shown.length>1?(i+1)+' of '+shown.length:'';
@@ -389,25 +390,28 @@ document.getElementById('meSave').addEventListener('click',async()=>{
   if(r.error)return toast('That didn’t save. Try again.');
   profile=r.data;me.close();showAcct();if(viewing)loadComments(viewing);toast('Saved.');
 });
-// a shared drawing's Delete: for whoever shared it, and for Roman (admin) on any
+// Delete: a shared drawing for whoever shared it; any drawing for Roman (admin), as an example one (a file here) is
+// taken off by listing it as removed
 function deleteLink(d){
-  if(!d.sid||!user||!(d.uid===user.id||admin))return null;
+  if(!user||!(admin||(d.sid&&d.uid===user.id)))return null;
   const x=Object.assign(document.createElement('button'),{type:'button',className:'link',textContent:'Delete'});
   x.setAttribute('aria-label','Delete '+d.title);
   x.addEventListener('click',async e=>{
     e.stopPropagation();if(!confirm('Delete “'+d.title+'” from the Scrappy Book site?'))return;
-    const r=await sb.from('shared_drawings').delete().eq('id',d.sid).select('id');
+    const r=d.sid?await sb.from('shared_drawings').delete().eq('id',d.sid).select('id'):await sb.from('removed_drawings').insert({drawing_id:d.id}).select('drawing_id');
     if(r.error||!r.data||!r.data.length)return toast('It didn’t delete. Try signing out and in again.');
+    if(!d.sid)removed.add(d.id);
     if(viewing===d)openView(null);await loadShared();show();toast('Deleted.');
   });
   return x;
 }
 // drawings people shared from their Doot (each "s<id>", for hearts and comments), newest first
-let curated=[],shared=[];
+let curated=[],shared=[],removed=new Set();
 async function loadShared(){
+  const g=await sb.from('removed_drawings').select('drawing_id');removed=new Set((g.data||[]).map(x=>x.drawing_id));
   const r=await sb.from('shared_drawings_shown').select('*').order('created_at',{ascending:false}).limit(200);
   shared=(r.data||[]).map(x=>({id:'s'+x.id,sid:x.id,uid:x.user_id,by:x.display_name,title:x.title,blurb:x.blurb,svg:x.svg,tags:x.tags||[],when:x.when_fits,moves:/<(animate|animateTransform|animateMotion|set)\b/i.test(x.svg)}));
-  all=shared.concat(curated);
+  all=shared.concat(curated.filter(d=>!removed.has(d.id)));
 }
 // Share, from the app: it opens this page with the drawing in the link's # (kept here while you sign in, if you need to)
 const shareBox=document.getElementById('shareBox');let pending=null;
