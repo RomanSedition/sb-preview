@@ -98,7 +98,21 @@
   }
   #view .nav button{font:inherit;font-weight:600;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:8px 16px;cursor:pointer}
   /* signing in, and your settings */
-  .acct{margin-left:auto;align-self:center}
+  .acct{margin-left:auto;align-self:center;display:flex;gap:8px}
+  .nrep{display:inline-block;min-width:20px;margin-left:6px;padding:0 6px;border-radius:999px;background:var(--orange);color:#1b0d05;font-size:12px;line-height:20px;text-align:center}
+  /* Reported Images (the admin's): drawings people reported, and what's been hidden or removed */
+  #reports{position:fixed;inset:0;z-index:12;background:var(--bg);overflow-y:auto}
+  #reports[hidden]{display:none}
+  #reports .rtop{position:sticky;top:0;background:var(--bg);display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line)}
+  #reports .rtop h2{margin:0;font-size:22px;flex:1}
+  #reports .rbody{max-width:900px;margin:0 auto;padding:16px}
+  #reports h3{font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:18px 0 10px}
+  #reports ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+  #reports li{display:flex;gap:14px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px}
+  #reports li img{width:72px;height:72px;object-fit:contain;background:var(--paper);border-radius:10px;padding:6px;flex:none}
+  #reports .rinfo{flex:1;min-width:0}#reports .rinfo b{display:block}#reports .rinfo span{color:var(--muted);font-size:13px}
+  #reports .racts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  #reports .none{color:var(--muted)}
   .btn{font:inherit;font-weight:600;font-size:14px;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer}
   .btn.primary{background:var(--mint);border-color:var(--mint);color:#10201C}
   .btn.small{font-size:13px;padding:5px 10px}
@@ -148,6 +162,10 @@
   <main id="list"></main>
   <footer>A test page, not public yet.</footer>
   <div id="toast" role="status" hidden><span></span></div>
+  <section id="reports" role="dialog" aria-modal="true" aria-label="Reported Images" hidden>
+    <div class="rtop"><h2>Reported Images</h2><button class="x btn" type="button" aria-label="Close">×</button></div>
+    <div class="rbody"><h3>Reported</h3><ul id="repList"></ul><h3>Hidden or removed</h3><ul id="goneList"></ul></div>
+  </section>
   <dialog id="shareBox">
     <h2>Share a drawing</h2>
     <div class="spic"><img alt=""></div>
@@ -245,8 +263,7 @@ function show(){
     const hb=a.querySelector('.heart');hb.dataset.heart=d.id;heartButton(hb,d);hb.addEventListener('click',()=>{toggleHeart(d);if(sort.value==='hearts')show();});
     if(d.moves){const m=document.createElement('span');m.className='moves';m.textContent='Animation';a.querySelector('.pic').after(m);}
     a.querySelector('h2').textContent=d.title;a.querySelector('p').textContent=d.blurb||'';
-    const dx=deleteLink(d);
-    if(d.by||dx){const by=document.createElement('span');by.className='by';by.textContent=d.by?'Shared by '+d.by:'';if(dx){if(d.by)by.append(' · ');by.append(dx);}a.querySelector('h2').after(by);}
+    const by=document.createElement('span');by.className='by';drawingLine(by,d);if(by.childNodes.length)a.querySelector('h2').after(by);
     a.querySelector('.tags').replaceChildren(...(d.tags||[]).map(t=>{const li=document.createElement('li');li.textContent=t;return li;}));
     addButton(a.querySelector('.add'),d);
     leds.set(a.querySelector('canvas'),{img,svg:d.svg,moves:d.moves,drawn:false});
@@ -268,7 +285,7 @@ function openView(d,toComments){
   const img=view.querySelector('img');img.src=svgURL(d.svg);img.alt=d.title;
   view.querySelector('h2').textContent=d.title;view.querySelector('p').textContent=d.blurb||'';
   const vby=view.querySelector('.vby');vby.replaceChildren();
-  const vx=deleteLink(d);if(d.by)vby.append('Shared by '+d.by);if(vx){if(d.by)vby.append(' · ');vby.append(vx);}
+  drawingLine(vby,d);
   const hb=view.querySelector('.heart');hb.dataset.heart=d.id;heartButton(hb,d);
   const va=view.querySelector('.add'),fresh=va.cloneNode(true);va.replaceWith(fresh);addButton(fresh,d); // no handlers from the last drawing
   const i=shown.indexOf(d);view.querySelector('.vpos').textContent=shown.length>1?(i+1)+' of '+shown.length:'';
@@ -379,6 +396,10 @@ function showAcct(){
   const b=document.createElement('button');b.type='button';b.className=user?'btn':'btn primary';
   b.textContent=user?(profile?profile.display_name:'You'):'Sign in';
   b.addEventListener('click',()=>{if(!user)return signIn();document.getElementById('myName').value=profile?profile.display_name:'';document.getElementById('myCensor').checked=censoring();me.showModal();});
+  if(admin){
+    const rb=Object.assign(document.createElement('button'),{type:'button',className:'btn',textContent:'Reported'});rb.id='reportedBtn';
+    rb.addEventListener('click',()=>openReports(true));acct.prepend(rb);countReports();
+  }
   acct.append(b);
 }
 document.getElementById('meClose').addEventListener('click',()=>me.close());
@@ -405,12 +426,34 @@ function deleteLink(d){
   });
   return x;
 }
+// under a drawing's title: who shared it, then Delete or Report
+function drawingLine(el,d){
+  el.replaceChildren();const bits=[];
+  if(d.by)bits.push('Shared by '+d.by);
+  const x=deleteLink(d);if(x)bits.push(x);
+  const rp=reportLink(d);if(rp)bits.push(rp);
+  bits.forEach((b,i)=>{if(i)el.append(' · ');el.append(b);});
+}
+// Report: for anyone but whoever shared it (and Roman, who deletes instead); once each
+function reportLink(d){
+  if(admin||(user&&d.sid&&d.uid===user.id))return null;
+  const x=Object.assign(document.createElement('button'),{type:'button',className:'link',textContent:'Report'});
+  x.setAttribute('aria-label','Report '+d.title);
+  x.addEventListener('click',async e=>{
+    e.stopPropagation();if(!user)return needSignIn('report drawings');
+    if(!confirm('Report “'+d.title+'”? It’s checked, and hidden if a few people report it.'))return;
+    const r=await sb.from('drawing_reports').insert({drawing_id:d.id});
+    toast(r.error&&r.error.code!=='23505'?'The report didn’t send. Try again.':'Thanks. It’s been reported.');
+  });
+  return x;
+}
 // drawings people shared from their Doot (each "s<id>", for hearts and comments), newest first
-let curated=[],shared=[],removed=new Set();
+let curated=[],shared=[],allShared=[],removed=new Set();
 async function loadShared(){
   const g=await sb.from('removed_drawings').select('drawing_id');removed=new Set((g.data||[]).map(x=>x.drawing_id));
   const r=await sb.from('shared_drawings_shown').select('*').order('created_at',{ascending:false}).limit(200);
-  shared=(r.data||[]).map(x=>({id:'s'+x.id,sid:x.id,uid:x.user_id,by:x.display_name,title:x.title,blurb:x.blurb,svg:x.svg,tags:x.tags||[],when:x.when_fits,moves:/<(animate|animateTransform|animateMotion|set)\b/i.test(x.svg)}));
+  allShared=(r.data||[]).map(x=>({hidden:x.hidden,id:'s'+x.id,sid:x.id,uid:x.user_id,by:x.display_name,title:x.title,blurb:x.blurb,svg:x.svg,tags:x.tags||[],when:x.when_fits,moves:/<(animate|animateTransform|animateMotion|set)\b/i.test(x.svg)}));
+  shared=allShared.filter(d=>!d.hidden);
   all=shared.concat(curated.filter(d=>!removed.has(d.id)));
 }
 // Share, from the app: it opens this page with the drawing in the link's # (kept here while you sign in, if you need to)
@@ -444,6 +487,46 @@ document.getElementById('shareGo').addEventListener('click',async()=>{
   const d=all.find(x=>x.sid===r.data.id);if(d)openView(d);
 });
 readShare();
+const repEl=document.getElementById('reports');
+repEl.querySelector('.x').addEventListener('click',()=>openReports(false));
+addEventListener('keydown',e=>{if(e.key==='Escape'&&!repEl.hidden)openReports(false);});
+async function countReports(){
+  const r=await sb.from('drawing_reports').select('drawing_id');
+  const n=new Set((r.data||[]).map(x=>x.drawing_id)).size,b=document.getElementById('reportedBtn');
+  if(b){b.textContent='Reported';if(n){const c=document.createElement('span');c.className='nrep';c.textContent=n;b.append(c);}b.setAttribute('aria-label','Reported images, '+n);}
+}
+const findDrawing=id=>allShared.find(d=>d.id===id)||curated.find(d=>d.id===id);
+function repRow(d,info,acts){
+  const li=document.createElement('li');li.innerHTML='<img alt=""><div class="rinfo"><b></b><span></span></div><div class="racts"></div>';
+  li.querySelector('img').src=svgURL(d.svg);li.querySelector('img').alt=d.title;li.querySelector('b').textContent=d.title;li.querySelector('span').textContent=info;
+  acts.forEach(([label,go,primary])=>{const b=Object.assign(document.createElement('button'),{type:'button',className:'btn small'+(primary?' primary':''),textContent:label});b.addEventListener('click',async()=>{b.disabled=true;await go();await refreshAll();});li.querySelector('.racts').append(b);});
+  return li;
+}
+async function refreshAll(){await loadShared();show();await countReports();if(!repEl.hidden)await openReports(true);}
+// a drawing's Delete from here: a shared one for good, an example one onto the removed list
+const removeDrawing=d=>d.sid?sb.from('shared_drawings').delete().eq('id',d.sid):sb.from('removed_drawings').insert({drawing_id:d.id});
+const clearReports=d=>sb.from('drawing_reports').delete().eq('drawing_id',d.id);
+async function openReports(on){
+  repEl.hidden=!on;document.body.style.overflow=on?'hidden':'';if(!on)return;
+  await loadShared();
+  const r=await sb.from('drawing_reports').select('drawing_id,created_at');
+  const by={};(r.data||[]).forEach(x=>{(by[x.drawing_id]=by[x.drawing_id]||[]).push(x.created_at);});
+  const rep=document.getElementById('repList');rep.replaceChildren();
+  Object.entries(by).sort((a,b)=>b[1].length-a[1].length).forEach(([id,times])=>{
+    const d=findDrawing(id);
+    if(!d){clearReports({id});return;} // gone already: its reports go too
+    const gone=d.hidden||removed.has(d.id),n=times.length;
+    rep.append(repRow(d,n+' report'+(n>1?'s':'')+(d.sid?' · shared by '+d.by:' · an example')+(gone?' · hidden for now':''),[
+      ['Delete',async()=>{await clearReports(d);await removeDrawing(d);}],
+      ['Keep',async()=>{await clearReports(d);if(d.hidden)await sb.from('shared_drawings').update({hidden:false}).eq('id',d.sid);},true],
+      ['Look',async()=>{openReports(false);openView(d);}]]));
+  });
+  if(!rep.children.length)rep.innerHTML='<li class="none">Nothing reported. 🎉</li>';
+  const goneList=document.getElementById('goneList');goneList.replaceChildren();
+  allShared.filter(d=>d.hidden).forEach(d=>goneList.append(repRow(d,'Shared by '+d.by+' · hidden',[['Restore',()=>sb.from('shared_drawings').update({hidden:false}).eq('id',d.sid),true],['Delete',()=>sb.from('shared_drawings').delete().eq('id',d.sid)]])));
+  curated.filter(d=>removed.has(d.id)).forEach(d=>goneList.append(repRow(d,'An example · removed',[['Restore',()=>sb.from('removed_drawings').delete().eq('drawing_id',d.id),true]])));
+  if(!goneList.children.length)goneList.innerHTML='<li class="none">Nothing hidden or removed.</li>';
+}
 async function signedIn(session){
   user=session?session.user:null;profile=null;admin=false;
   if(user){
