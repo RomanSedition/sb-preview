@@ -196,6 +196,12 @@ async function toggleHeart(d){
   const r=on?await sb.from('drawing_hearts').insert({drawing_id:d.id}):await sb.from('drawing_hearts').delete().eq('drawing_id',d.id).eq('user_id',user.id);
   if(r.error){on?mine.delete(d.id):mine.add(d.id);heartCount[d.id]=hearts(d)+(on?-1:1);paint();toast('That heart didn’t save. Try again.');}
 }
+// Doot is an Android app: anywhere else, "Add" says how instead of opening a link the browser can't follow
+const ANDROID=/Android/i.test(navigator.userAgent);
+function addButton(a,d){
+  a.href=addLink(d);
+  if(!ANDROID)a.addEventListener('click',e=>{e.preventDefault();toast('Doot is an Android app: open this page on your Android phone with Doot on it, and tap Add there.');});
+}
 const addLink=d=>{
   const src=new URL('d/'+d.id+'.json',location.href).href;
   return 'intent://add?src='+encodeURIComponent(src)+'#Intent;scheme=doot;package=com.romansedition.doot;end';
@@ -218,7 +224,7 @@ function show(){
     if(d.moves){const m=document.createElement('span');m.className='moves';m.textContent='Animation';a.querySelector('.pic').after(m);}
     a.querySelector('h2').textContent=d.title;a.querySelector('p').textContent=d.blurb||'';
     a.querySelector('.tags').replaceChildren(...(d.tags||[]).map(t=>{const li=document.createElement('li');li.textContent=t;return li;}));
-    a.querySelector('.add').href=addLink(d);
+    addButton(a.querySelector('.add'),d);
     leds.set(a.querySelector('canvas'),{img,svg:d.svg,moves:d.moves,drawn:false});
     return a;
   }));
@@ -238,7 +244,7 @@ function openView(d,toComments){
   const img=view.querySelector('img');img.src=svgURL(d.svg);img.alt=d.title;
   view.querySelector('h2').textContent=d.title;view.querySelector('p').textContent=d.blurb||'';
   const hb=view.querySelector('.heart');hb.dataset.heart=d.id;heartButton(hb,d);
-  view.querySelector('.add').href=addLink(d);
+  const va=view.querySelector('.add'),fresh=va.cloneNode(true);va.replaceWith(fresh);addButton(fresh,d); // no handlers from the last drawing
   const i=shown.indexOf(d);view.querySelector('.vpos').textContent=shown.length>1?(i+1)+' of '+shown.length:'';
   leds.set(view.querySelector('canvas'),{img,svg:d.svg,moves:d.moves,drawn:false,cols:100});
   view.querySelector('.x').focus();
