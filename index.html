@@ -20,7 +20,12 @@
   body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.5}
   header{max-width:1100px;margin:0 auto;padding:28px 16px 8px;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px}
   h1{margin:0;font-family:var(--f-display);font-weight:800;font-size:clamp(34px,8vw,48px);line-height:1.1;color:var(--orange)}
-  h1 span{color:var(--mint)}
+  /* the app's own wordmark: the pp is Doot in glasses, blushing at the oo, Doot with heart eyes */
+  .brand-d{color:var(--orange)}
+  .brand-face{display:inline-block;height:1.01em;vertical-align:-.28em;fill:var(--mint);color:var(--mint);overflow:visible}
+  .brand-face.bf-pp{width:1.172em;margin:0 .01em}
+  .brand-face.bf-oo{width:.98em;margin:0 .01em}
+  .brand-face .blush{fill:var(--orange)}
   .badge{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
   .lede{flex-basis:100%;margin:4px 0 0;color:var(--muted);max-width:60ch}
   .find{max-width:1100px;margin:0 auto;padding:12px 16px}
@@ -128,7 +133,7 @@
 </head>
 <body>
   <header>
-    <h1>Scr<span>a</span>ppy B<span>oo</span>k</h1><span class="badge">Preview</span><div class="acct" id="acct"></div>
+    <h1 role="img" aria-label="Scrappy Book"><span class="brand-d">Scra</span><svg class="brand-face bf-pp" viewBox="212 93 232 200" aria-hidden="true"><rect x="226" y="133" width="24" height="123" rx="12"/><path fill-rule="evenodd" d="M268 133H268A42 42 0 0 1 310 175V195A42 42 0 0 1 268 237A42 42 0 0 1 226 195V175A42 42 0 0 1 268 133ZM281 149H290A3 3 0 0 1 293 152V161A3 3 0 0 1 290 164H281A3 3 0 0 1 278 161V152A3 3 0 0 1 281 149Z"/><rect x="346" y="133" width="24" height="123" rx="12"/><path fill-rule="evenodd" d="M388 133H388A42 42 0 0 1 430 175V195A42 42 0 0 1 388 237A42 42 0 0 1 346 195V175A42 42 0 0 1 388 133ZM401 149H410A3 3 0 0 1 413 152V161A3 3 0 0 1 410 164H401A3 3 0 0 1 398 161V152A3 3 0 0 1 401 149Z"/><ellipse class="blush" cx="272" cy="270" rx="17" ry="9" opacity=".9"/><ellipse class="blush" cx="400" cy="270" rx="17" ry="9" opacity=".9"/><path d="M306 266 Q326 282 346 266" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round"/></svg><span class="brand-d">y B</span><svg class="brand-face bf-oo" viewBox="194 93 194 200" aria-hidden="true"><path d="M234 240.5L186.5 190.5A24 24 0 0 1 234 162A24 24 0 0 1 281.5 190.5Z"/><path d="M334 240.5L286.5 190.5A24 24 0 0 1 334 162A24 24 0 0 1 381.5 190.5Z"/><path d="M256.4 260Q286.4 260 316.4 260Q312.4 290 286.4 290Q260.4 290 256.4 260Z"/></svg><span class="brand-d">k</span></h1><span class="badge">Preview</span><div class="acct" id="acct"></div>
     <p class="lede">Drawings from Doot’s Scrappy Book. Tap <b>Add to my Doot</b> on your phone to put one in yours.</p>
   </header>
   <div class="find"><input id="find" type="search" placeholder="Find a drawing" aria-label="Find a drawing">
