@@ -50,7 +50,7 @@
   .card h2{margin:0;font-size:17px;font-weight:600;line-height:1.3}
   .card p{margin:0;color:var(--muted);font-size:14px}
   .by,.vby{font-size:13px;color:var(--mint);font-weight:500}.vby:empty{display:none}
-  .vby .link{font:inherit;color:var(--muted);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+  .by .link,.vby .link{font:inherit;color:var(--muted);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
   #shareBox .spic{aspect-ratio:1;width:min(60vw,220px);margin:0 auto 4px;border-radius:12px;background:var(--paper);padding:6%;display:grid;place-items:center}
   #shareBox .spic img{width:100%;height:100%;object-fit:contain}
   #shareBox textarea{width:100%;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 12px;min-height:60px;resize:vertical}
@@ -245,7 +245,7 @@ function show(){
     const hb=a.querySelector('.heart');hb.dataset.heart=d.id;heartButton(hb,d);hb.addEventListener('click',()=>{toggleHeart(d);if(sort.value==='hearts')show();});
     if(d.moves){const m=document.createElement('span');m.className='moves';m.textContent='Animation';a.querySelector('.pic').after(m);}
     a.querySelector('h2').textContent=d.title;a.querySelector('p').textContent=d.blurb||'';
-    if(d.by){const by=document.createElement('span');by.className='by';by.textContent='Shared by '+d.by;a.querySelector('h2').after(by);}
+    if(d.by){const by=document.createElement('span');by.className='by';by.textContent='Shared by '+d.by;const x=deleteLink(d);if(x)by.append(' · ',x);a.querySelector('h2').after(by);}
     a.querySelector('.tags').replaceChildren(...(d.tags||[]).map(t=>{const li=document.createElement('li');li.textContent=t;return li;}));
     addButton(a.querySelector('.add'),d);
     leds.set(a.querySelector('canvas'),{img,svg:d.svg,moves:d.moves,drawn:false});
@@ -267,11 +267,7 @@ function openView(d,toComments){
   const img=view.querySelector('img');img.src=svgURL(d.svg);img.alt=d.title;
   view.querySelector('h2').textContent=d.title;view.querySelector('p').textContent=d.blurb||'';
   const vby=view.querySelector('.vby');vby.replaceChildren();
-  if(d.by){vby.append('Shared by '+d.by);
-    if(user&&(d.uid===user.id||admin)){const x=Object.assign(document.createElement('button'),{type:'button',className:'link',textContent:'Delete'});
-      x.addEventListener('click',async()=>{if(!confirm('Delete “'+d.title+'” from the Scrappy Book site?'))return;
-        const r=await sb.from('shared_drawings').delete().eq('id',d.sid);if(r.error)return toast('It didn’t delete. Try again.');
-        openView(null);await loadShared();show();toast('Deleted.');});vby.append(' · ',x);}}
+  if(d.by){vby.append('Shared by '+d.by);const x=deleteLink(d);if(x)vby.append(' · ',x);}
   const hb=view.querySelector('.heart');hb.dataset.heart=d.id;heartButton(hb,d);
   const va=view.querySelector('.add'),fresh=va.cloneNode(true);va.replaceWith(fresh);addButton(fresh,d); // no handlers from the last drawing
   const i=shown.indexOf(d);view.querySelector('.vpos').textContent=shown.length>1?(i+1)+' of '+shown.length:'';
@@ -393,6 +389,19 @@ document.getElementById('meSave').addEventListener('click',async()=>{
   if(r.error)return toast('That didn’t save. Try again.');
   profile=r.data;me.close();showAcct();if(viewing)loadComments(viewing);toast('Saved.');
 });
+// a shared drawing's Delete: for whoever shared it, and for Roman (admin) on any
+function deleteLink(d){
+  if(!d.sid||!user||!(d.uid===user.id||admin))return null;
+  const x=Object.assign(document.createElement('button'),{type:'button',className:'link',textContent:'Delete'});
+  x.setAttribute('aria-label','Delete '+d.title);
+  x.addEventListener('click',async e=>{
+    e.stopPropagation();if(!confirm('Delete “'+d.title+'” from the Scrappy Book site?'))return;
+    const r=await sb.from('shared_drawings').delete().eq('id',d.sid).select('id');
+    if(r.error||!r.data||!r.data.length)return toast('It didn’t delete. Try signing out and in again.');
+    if(viewing===d)openView(null);await loadShared();show();toast('Deleted.');
+  });
+  return x;
+}
 // drawings people shared from their Doot (each "s<id>", for hearts and comments), newest first
 let curated=[],shared=[];
 async function loadShared(){
