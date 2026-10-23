@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <style>
   :root{
     --bg:#0F1514;--surface:#18201F;--line:#2A3533;--fg:#E8F1EF;--muted:#9FB3AF;
@@ -60,7 +61,8 @@
   .heart[aria-pressed="true"] path{fill:currentColor}
   /* full screen: one drawing as big as fits, with its words and buttons below; swipe or the arrows for the next */
   #view{position:fixed;inset:0;z-index:10;background:#0D1720;display:flex;flex-direction:column;align-items:center;gap:12px;
-    padding:max(14px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));touch-action:none}
+    padding:max(14px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));touch-action:pan-y;overflow-y:auto}
+  #view .vpic{touch-action:none;flex-shrink:0}
   #view .vinfo{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}
   #view[hidden]{display:none}
   #view .vtop{align-self:stretch;display:flex;justify-content:space-between;align-items:center}
@@ -74,7 +76,6 @@
   #view p{margin:0;color:var(--muted);text-align:center;max-width:52ch}
   #view .row{margin:0;width:100%;max-width:420px}
   #view .nav{display:flex;gap:10px}
-  @media not ((orientation:landscape) and (max-height:600px)){#view .vpic{margin-top:auto}#view .vinfo{margin-bottom:auto}} /* centred on a tall screen */
   /* a phone on its side: the drawing as tall as the screen on the left, its words and buttons on the right */
   @media (orientation:landscape) and (max-height:600px){
     #view{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,38%);grid-template-rows:auto minmax(0,1fr);column-gap:20px;row-gap:8px;align-items:center;
@@ -85,19 +86,64 @@
     #view h2{font-size:18px}#view p{font-size:14px}
   }
   #view .nav button{font:inherit;font-weight:600;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:8px 16px;cursor:pointer}
+  /* signing in, and your settings */
+  .acct{margin-left:auto;align-self:center}
+  .btn{font:inherit;font-weight:600;font-size:14px;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer}
+  .btn.primary{background:var(--mint);border-color:var(--mint);color:#10201C}
+  .btn.small{font-size:13px;padding:5px 10px}
+  .chip{display:flex;align-items:center;gap:6px;font:inherit;font-weight:600;font-size:14px;color:var(--muted);background:transparent;border:1px solid var(--line);border-radius:999px;padding:8px 12px;cursor:pointer}
+  .chip svg{width:18px;height:18px}
+  #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:30;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px;display:flex;gap:12px;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.4);max-width:calc(100vw - 32px)}
+  #toast[hidden]{display:none}
+  dialog{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:18px;padding:20px;width:min(92vw,380px)}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  dialog h2{margin:0 0 12px;font-size:20px}
+  dialog label{display:block;font-weight:600;font-size:14px;margin:12px 0 6px}
+  dialog input[type=text]{width:100%;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 12px}
+  dialog .check{display:flex;gap:10px;align-items:flex-start;font-weight:500}
+  dialog .check small{display:block;color:var(--muted);font-weight:400}
+  dialog .acts{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
+  /* comments, under a drawing in full screen */
+  #view .comments{width:100%;max-width:520px;text-align:left;border-top:1px solid var(--line);padding-top:12px;margin-top:4px}
+  #view .comments h3{margin:0 0 8px;font-size:15px}
+  #view .comments ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+  #view .comments li{display:flex;flex-direction:column;gap:2px}
+  #view .comments li.hidden{opacity:.55}
+  #view .comments .who{font-weight:600;font-size:14px}
+  #view .comments .when{color:var(--muted);font-weight:400;font-size:12px;margin-left:6px}
+  #view .comments .body{margin:0;color:var(--fg);text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px}
+  #view .comments .cacts{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px}
+  #view .comments .cacts .chip{padding:3px 9px;font-size:13px}
+  #view .comments .cacts .chip svg{width:14px;height:14px}
+  #view .comments .link{font:inherit;font-size:13px;color:var(--muted);background:none;border:0;padding:3px 4px;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+  #view .comments .none{color:var(--muted);text-align:left;font-size:14px}
+  #view .say{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+  #view .say textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-height:64px;resize:vertical}
+  #view .say .srow{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  #view .say .count{color:var(--muted);font-size:12px}
+  .chip[aria-pressed="true"]{color:var(--orange);border-color:var(--orange)}
+  .chip[aria-pressed="true"] path{fill:currentColor}
   footer{max-width:1100px;margin:0 auto;padding:0 16px 32px;color:var(--muted);font-size:13px}
 </style>
 </head>
 <body>
   <header>
-    <h1>Scr<span>a</span>ppy B<span>oo</span>k</h1><span class="badge">Preview</span>
+    <h1>Scr<span>a</span>ppy B<span>oo</span>k</h1><span class="badge">Preview</span><div class="acct" id="acct"></div>
     <p class="lede">Drawings from Doot’s Scrappy Book. Tap <b>Add to my Doot</b> on your phone to put one in yours.</p>
   </header>
   <div class="find"><input id="find" type="search" placeholder="Find a drawing" aria-label="Find a drawing">
     <div class="look" role="group" aria-label="Show drawings as"><button type="button" data-look="smooth">Smooth</button><button type="button" data-look="led">LED</button></div>
     <select class="sort" id="sort" aria-label="Sort by"><option value="new">Newest</option><option value="hearts">Most hearted</option></select></div>
   <main id="list"></main>
-  <footer>A test page, not public yet. Hearts are kept in this browser for now.</footer>
+  <footer>A test page, not public yet.</footer>
+  <div id="toast" role="status" hidden><span></span></div>
+  <dialog id="me">
+    <h2>Your settings</h2>
+    <label for="myName">Your name</label>
+    <input id="myName" type="text" maxlength="40" autocomplete="nickname">
+    <label class="check"><input id="myCensor" type="checkbox"><span>Censored mode<small>Bad words in comments are hidden with stars.</small></span></label>
+    <div class="acts"><button class="btn" type="button" id="signOut">Sign out</button><button class="btn" type="button" id="meClose">Cancel</button><button class="btn primary" type="button" id="meSave">Save</button></div>
+  </dialog>
   <div id="view" role="dialog" aria-modal="true" aria-label="Drawing" hidden>
     <div class="vtop"><span class="vpos"></span><button class="x" type="button" aria-label="Close">×</button></div>
     <div class="vpic"><img alt=""><canvas></canvas></div>
@@ -106,6 +152,7 @@
       <div class="look" role="group" aria-label="Show it as"><button type="button" data-look="smooth">Smooth</button><button type="button" data-look="led">LED</button></div>
       <div class="row"><button class="heart" type="button"></button><a class="add">Add to my Doot</a></div>
       <div class="nav"><button type="button" data-step="-1">‹ Previous</button><button type="button" data-step="1">Next ›</button></div>
+      <section class="comments" aria-label="Comments"><h3></h3><ol></ol><div class="say"></div></section>
     </div>
   </div>
 <script>
@@ -115,18 +162,39 @@ const list=document.getElementById('list'),find=document.getElementById('find'),
 let all=[],shown=[];
 const svgURL=svg=>'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
 const ICON_HEART='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>';
-// Hearts: each drawing's count (from the server, once there is one; "hearts" in drawings.json until then) and
-// whether you hearted it (kept in this browser), so "Most hearted" sorts by them
-let mine=new Set();try{mine=new Set(JSON.parse(localStorage.getItem('sb.hearts')||'[]'))}catch(e){}
-const hearts=d=>(d.hearts||0)+(mine.has(d.id)?1:0);
+// The server (Supabase): hearts, comments and who's signed in. Anyone can look; hearting and commenting need
+// signing in with Google. Its rules (in supabase/schema.sql) let people change only their own things.
+const sb=supabase.createClient('https://jkiackmuihwqzvrgzhfu.supabase.co','sb_publishable_s3aZO-xGMBqOS9GbhqPlzQ_1NbLHJPI');
+let user=null,profile=null,admin=false;
+const heartCount={},commentCount={};let mine=new Set();
+const hearts=d=>heartCount[d.id]||0;
+const ICON_TALK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>';
+const toastEl=document.getElementById('toast');let toastTimer=0;
+function toast(msg,action){
+  toastEl.replaceChildren(Object.assign(document.createElement('span'),{textContent:msg}));
+  if(action){const b=Object.assign(document.createElement('button'),{className:'btn small primary',type:'button',textContent:action.label});b.addEventListener('click',()=>{toastEl.hidden=true;action.go();});toastEl.append(b);}
+  toastEl.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>{toastEl.hidden=true;},action?7000:3500);
+}
+const signIn=()=>sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname}});
+const needSignIn=what=>toast('Sign in with Google to '+what+'.',{label:'Sign in',go:signIn});
+async function loadCounts(){
+  const [h,c]=await Promise.all([sb.from('drawing_heart_counts').select('*'),sb.from('comment_counts').select('*')]);
+  (h.data||[]).forEach(r=>{heartCount[r.drawing_id]=r.hearts;});(c.data||[]).forEach(r=>{commentCount[r.drawing_id]=r.comments;});
+  mine=new Set();
+  if(user){const m=await sb.from('drawing_hearts').select('drawing_id').eq('user_id',user.id);(m.data||[]).forEach(r=>mine.add(r.drawing_id));}
+}
 function heartButton(b,d){
   b.innerHTML=ICON_HEART+'<span></span>';b.querySelector('span').textContent=hearts(d);
   b.setAttribute('aria-pressed',String(mine.has(d.id)));b.setAttribute('aria-label',(mine.has(d.id)?'Take your heart off ':'Heart ')+d.title+', '+hearts(d)+' hearts');
 }
-function toggleHeart(d){
-  mine.has(d.id)?mine.delete(d.id):mine.add(d.id);
-  try{localStorage.setItem('sb.hearts',JSON.stringify([...mine]))}catch(e){}
-  document.querySelectorAll('[data-heart="'+d.id+'"]').forEach(b=>heartButton(b,d));
+// shown at once, then saved; put back if saving fails
+async function toggleHeart(d){
+  if(!user)return needSignIn('heart drawings');
+  const on=!mine.has(d.id);
+  const paint=()=>document.querySelectorAll('[data-heart="'+d.id+'"]').forEach(b=>heartButton(b,d));
+  on?mine.add(d.id):mine.delete(d.id);heartCount[d.id]=hearts(d)+(on?1:-1);paint();
+  const r=on?await sb.from('drawing_hearts').insert({drawing_id:d.id}):await sb.from('drawing_hearts').delete().eq('drawing_id',d.id).eq('user_id',user.id);
+  if(r.error){on?mine.delete(d.id):mine.add(d.id);heartCount[d.id]=hearts(d)+(on?-1:1);paint();toast('That heart didn’t save. Try again.');}
 }
 const addLink=d=>{
   const src=new URL('d/'+d.id+'.json',location.href).href;
@@ -138,7 +206,10 @@ function show(){
   if(sort.value==='hearts')shown=shown.map((d,i)=>[d,i]).sort((x,y)=>hearts(y[0])-hearts(x[0])||x[1]-y[1]).map(x=>x[0]);
   list.replaceChildren(...shown.map(d=>{
     const a=document.createElement('article');a.className='card';
-    a.innerHTML='<div class="pic"><img alt=""><canvas></canvas></div><h2></h2><p></p><ul class="tags"></ul><div class="row"><button class="heart" type="button"></button><a class="add">Add to my Doot</a></div>';
+    a.innerHTML='<div class="pic"><img alt=""><canvas></canvas></div><h2></h2><p></p><ul class="tags"></ul><div class="row"><button class="heart" type="button"></button><button class="chip talk" type="button"></button><a class="add">Add</a></div>';
+    const tb=a.querySelector('.talk');tb.innerHTML=ICON_TALK+'<span></span>';tb.querySelector('span').textContent=commentCount[d.id]||0;
+    tb.setAttribute('aria-label',(commentCount[d.id]||0)+' comments on '+d.title);tb.addEventListener('click',()=>openView(d,true));
+    a.querySelector('.add').setAttribute('aria-label','Add '+d.title+' to my Doot');
     const img=a.querySelector('img');img.src=svgURL(d.svg);img.alt=d.title;
     const pic=a.querySelector('.pic');pic.tabIndex=0;pic.setAttribute('role','button');pic.setAttribute('aria-label','Show '+d.title+' full screen');
     pic.addEventListener('click',()=>openView(d));
@@ -161,8 +232,9 @@ new IntersectionObserver(([e])=>bar.classList.toggle('stuck',!e.isIntersecting))
 
 // full screen
 let viewing=null;
-function openView(d){
+function openView(d,toComments){
   viewing=d;view.hidden=!d;document.body.style.overflow=d?'hidden':'';if(!d)return;
+  view.scrollTop=0;loadComments(d).then(()=>{if(toComments)view.querySelector('.comments').scrollIntoView({block:'start'});});
   const img=view.querySelector('img');img.src=svgURL(d.svg);img.alt=d.title;
   view.querySelector('h2').textContent=d.title;view.querySelector('p').textContent=d.blurb||'';
   const hb=view.querySelector('.heart');hb.dataset.heart=d.id;heartButton(hb,d);
@@ -175,16 +247,126 @@ const step=by=>{const i=shown.indexOf(viewing),n=shown[i+by];if(n)openView(n);};
 view.querySelector('.x').addEventListener('click',()=>openView(null));
 view.querySelector('.heart').addEventListener('click',()=>{if(viewing){toggleHeart(viewing);}});
 view.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>step(+b.dataset.step)));
-addEventListener('keydown',e=>{if(view.hidden)return;if(e.key==='Escape')openView(null);else if(e.key==='ArrowRight')step(1);else if(e.key==='ArrowLeft')step(-1);});
+addEventListener('keydown',e=>{if(view.hidden||/^(INPUT|TEXTAREA)$/.test(e.target.tagName)||document.querySelector('dialog[open]'))return;if(e.key==='Escape')openView(null);else if(e.key==='ArrowRight')step(1);else if(e.key==='ArrowLeft')step(-1);});
 let sw=null;
-view.addEventListener('pointerdown',e=>{sw={x:e.clientX,y:e.clientY};});
+view.addEventListener('pointerdown',e=>{sw=/^(INPUT|TEXTAREA|BUTTON|A)$/.test(e.target.tagName)?null:{x:e.clientX,y:e.clientY,onPic:!!e.target.closest('.vpic')};});
 // swipe left or up for the next, right or down for the one before
 view.addEventListener('pointerup',e=>{
-  if(!sw)return;const dx=e.clientX-sw.x,dy=e.clientY-sw.y;sw=null;
+  if(!sw)return;const s0=sw,dx=e.clientX-sw.x,dy=e.clientY-sw.y;sw=null;
   if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.5)step(dx<0?1:-1);
-  else if(Math.abs(dy)>50&&Math.abs(dy)>Math.abs(dx)*1.5)step(dy<0?1:-1);
+  else if(s0.onPic&&Math.abs(dy)>50&&Math.abs(dy)>Math.abs(dx)*1.5)step(dy<0?1:-1); // up and down on the drawing (elsewhere, it scrolls)
 });
 view.addEventListener('pointercancel',()=>{sw=null;});
+
+// Comments: oldest first, each with its writer's name, a heart (with how many), and Report (or Delete, for your
+// own); hidden ones (by Roman, or 3 reports) only Roman sees, marked. Bad words are starred out in censored mode,
+// which is on unless you've turned it off in your settings.
+const BAD=['fuck','shit','bitch','cunt','dick','cock','pussy','asshole','arsehole','bastard','slut','whore','fag','faggot','nigger','nigga','retard','wanker','twat','prick','motherfucker','bullshit','dickhead','bollocks','piss'];
+const BAD_RE=new RegExp('\\b('+BAD.join('|')+')(s|es|ed|er|ers|ing|ings|y|ty|tier|tiest|head|heads|hole|holes|face|faces)?\\b','gi'); // and the usual endings (shitty, dickhead)
+const censoring=()=>!profile||profile.censor;
+const clean=t=>censoring()?t.replace(BAD_RE,w=>w[0]+'*'.repeat(w.length-1)):t;
+function ago(t){
+  const s=(Date.now()-new Date(t))/1000;
+  if(s<60)return 'just now';if(s<3600)return Math.floor(s/60)+'m';if(s<86400)return Math.floor(s/3600)+'h';
+  if(s<604800)return Math.floor(s/86400)+'d';return new Date(t).toLocaleDateString(undefined,{day:'numeric',month:'short'});
+}
+const cbox=view.querySelector('.comments');
+async function loadComments(d){
+  const ol=cbox.querySelector('ol');ol.replaceChildren();cbox.querySelector('h3').textContent='Comments';say(d);
+  const r=await sb.from('comments_shown').select('*').eq('drawing_id',d.id).order('created_at',{ascending:true});
+  if(viewing!==d)return;
+  const list=r.data||[];let liked=new Set();
+  if(user&&list.length){const h=await sb.from('comment_hearts').select('comment_id').eq('user_id',user.id).in('comment_id',list.map(c=>c.id));(h.data||[]).forEach(x=>liked.add(x.comment_id));}
+  const shownCount=list.filter(c=>!c.hidden).length;commentCount[d.id]=shownCount;
+  cbox.querySelector('h3').textContent=shownCount?'Comments ('+shownCount+')':'Comments';
+  if(r.error){ol.innerHTML='<li class="none">The comments didn’t load. Try again in a moment.</li>';return;}
+  if(!list.length){ol.innerHTML='<li class="none">No comments yet. Say something nice!</li>';return;}
+  list.forEach(c=>ol.append(comment(c,liked.has(c.id))));
+}
+function comment(c,liked){
+  const li=document.createElement('li');if(c.hidden)li.className='hidden';
+  li.innerHTML='<div><span class="who"></span><span class="when"></span></div><p class="body"></p><div class="cacts"></div>';
+  li.querySelector('.who').textContent=c.display_name;
+  li.querySelector('.when').textContent=ago(c.created_at)+(c.hidden?' · hidden':'');
+  li.querySelector('.body').textContent=clean(c.body);
+  const acts=li.querySelector('.cacts');
+  const hb=document.createElement('button');hb.type='button';hb.className='chip';
+  let on=liked,n=c.hearts;
+  const paint=()=>{hb.innerHTML=ICON_HEART+'<span></span>';hb.querySelector('span').textContent=n;hb.setAttribute('aria-pressed',String(on));hb.setAttribute('aria-label',(on?'Take your heart off this comment':'Heart this comment')+', '+n+' hearts');};
+  paint();
+  hb.addEventListener('click',async()=>{
+    if(!user)return needSignIn('heart comments');
+    on=!on;n+=on?1:-1;paint();
+    const r=on?await sb.from('comment_hearts').insert({comment_id:c.id}):await sb.from('comment_hearts').delete().eq('comment_id',c.id).eq('user_id',user.id);
+    if(r.error){on=!on;n+=on?1:-1;paint();toast('That heart didn’t save. Try again.');}
+  });
+  acts.append(hb);
+  const link=(text,go)=>{const b=document.createElement('button');b.type='button';b.className='link';b.textContent=text;b.addEventListener('click',go);acts.append(b);};
+  const mineC=user&&c.user_id===user.id;
+  if(mineC||admin)link('Delete',async()=>{
+    if(!confirm('Delete this comment?'))return;
+    const r=await sb.from('comments').delete().eq('id',c.id);
+    if(r.error)return toast('It didn’t delete. Try again.');
+    loadComments(viewing);
+  });
+  if(admin)link(c.hidden?'Show again':'Hide',async()=>{
+    const r=await sb.from('comments').update({hidden:!c.hidden}).eq('id',c.id);
+    if(r.error)return toast('That didn’t save. Try again.');
+    loadComments(viewing);
+  });
+  if(!mineC&&!c.hidden)link('Report',async()=>{
+    if(!user)return needSignIn('report comments');
+    if(!confirm('Report this comment? It’s hidden once a few people report it, and checked.'))return;
+    const r=await sb.from('reports').insert({comment_id:c.id});
+    toast(r.error&&r.error.code!=='23505'?'The report didn’t send. Try again.':'Thanks. It’s been reported.');
+  });
+  return li;
+}
+// the box to write one, or a button to sign in first
+function say(d){
+  const box=cbox.querySelector('.say');box.replaceChildren();
+  if(!user){const b=Object.assign(document.createElement('button'),{className:'btn',type:'button',textContent:'Sign in with Google to comment'});b.addEventListener('click',signIn);box.append(b);return;}
+  box.innerHTML='<textarea maxlength="500" placeholder="Add a comment" aria-label="Add a comment"></textarea><div class="srow"><span class="count">0 / 500</span><button class="btn primary" type="button">Post</button></div>';
+  const ta=box.querySelector('textarea'),post=box.querySelector('button'),count=box.querySelector('.count');
+  ta.addEventListener('input',()=>{count.textContent=ta.value.length+' / 500';});
+  post.addEventListener('click',async()=>{
+    const body=ta.value.trim();if(!body)return;
+    post.disabled=true;const r=await sb.from('comments').insert({drawing_id:d.id,body});post.disabled=false;
+    if(r.error)return toast(/Slow down/.test(r.error.message)?'Slow down a little: too many comments at once.':'Your comment didn’t post. Try again.');
+    ta.value='';count.textContent='0 / 500';await loadComments(d);
+    const ol=cbox.querySelector('ol');ol.lastElementChild&&ol.lastElementChild.scrollIntoView({block:'nearest'});
+    updateCard(d);
+  });
+}
+function updateCard(d){document.querySelectorAll('.card').forEach(a=>{if(a.querySelector('[data-heart="'+d.id+'"]')){const t=a.querySelector('.talk span');if(t)t.textContent=commentCount[d.id]||0;}});}
+
+// Signing in: a button at the top, or your name, which opens your settings (name, censored mode, sign out)
+const acct=document.getElementById('acct'),me=document.getElementById('me');
+function showAcct(){
+  acct.replaceChildren();
+  const b=document.createElement('button');b.type='button';b.className=user?'btn':'btn primary';
+  b.textContent=user?(profile?profile.display_name:'You'):'Sign in';
+  b.addEventListener('click',()=>{if(!user)return signIn();document.getElementById('myName').value=profile?profile.display_name:'';document.getElementById('myCensor').checked=censoring();me.showModal();});
+  acct.append(b);
+}
+document.getElementById('meClose').addEventListener('click',()=>me.close());
+document.getElementById('signOut').addEventListener('click',async()=>{me.close();await sb.auth.signOut();});
+document.getElementById('meSave').addEventListener('click',async()=>{
+  const name=document.getElementById('myName').value.replace(/\s+/g,' ').trim().slice(0,40),censor=document.getElementById('myCensor').checked;
+  if(!name)return toast('Your name can’t be empty.');
+  const r=await sb.from('profiles').update({display_name:name,censor}).eq('id',user.id).select().single();
+  if(r.error)return toast('That didn’t save. Try again.');
+  profile=r.data;me.close();showAcct();if(viewing)loadComments(viewing);toast('Saved.');
+});
+async function signedIn(session){
+  user=session?session.user:null;profile=null;admin=false;
+  if(user){
+    const [p,a]=await Promise.all([sb.from('profiles').select('*').eq('id',user.id).maybeSingle(),sb.rpc('is_admin')]);
+    profile=p.data;admin=!!a.data;
+  }
+  showAcct();await loadCounts();if(all.length)show();if(viewing)openView(viewing);
+}
+sb.auth.onAuthStateChange((ev,session)=>{if(ev==='INITIAL_SESSION'||ev==='SIGNED_IN'||ev==='SIGNED_OUT')setTimeout(()=>signedIn(session));});
 
 // LED: each drawing drawn as Doot's screen shows it: on a grid of round lights, its dark lines lit in Doot's mint
 // (they'd vanish on the dark screen otherwise), each light at one of three brightnesses. An animation is played from
@@ -250,7 +432,7 @@ function setLook(v){
 }
 document.querySelectorAll('.look button').forEach(b=>b.addEventListener('click',()=>setLook(b.dataset.look)));
 setLook(look==='led'?'led':'smooth');
-fetch('drawings.json').then(r=>r.json()).then(d=>{all=d;show();}).catch(()=>{list.innerHTML='<p class="empty">The drawings didn’t load. Try refreshing.</p>';});
+fetch('drawings.json').then(r=>r.json()).then(async d=>{all=d;show();await loadCounts();show();}).catch(()=>{list.innerHTML='<p class="empty">The drawings didn’t load. Try refreshing.</p>';});
 </script>
 </body>
 </html>
