@@ -49,6 +49,12 @@
   .moves{align-self:flex-start;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--mint)}
   .card h2{margin:0;font-size:17px;font-weight:600;line-height:1.3}
   .card p{margin:0;color:var(--muted);font-size:14px}
+  .by,.vby{font-size:13px;color:var(--mint);font-weight:500}.vby:empty{display:none}
+  .vby .link{font:inherit;color:var(--muted);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+  #shareBox .spic{aspect-ratio:1;width:min(60vw,220px);margin:0 auto 4px;border-radius:12px;background:var(--paper);padding:6%;display:grid;place-items:center}
+  #shareBox .spic img{width:100%;height:100%;object-fit:contain}
+  #shareBox textarea{width:100%;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 12px;min-height:60px;resize:vertical}
+  #shareBox .note{color:var(--muted);font-size:13px;margin:10px 0 0}
   .tags{display:flex;flex-wrap:wrap;gap:4px;margin:0;padding:0;list-style:none}
   .tags li{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
   .add{margin-top:auto;display:block;text-align:center;text-decoration:none;font-weight:600;color:#10201C;background:var(--mint);border-radius:999px;padding:9px 14px}
@@ -142,6 +148,14 @@
   <main id="list"></main>
   <footer>A test page, not public yet.</footer>
   <div id="toast" role="status" hidden><span></span></div>
+  <dialog id="shareBox">
+    <h2>Share a drawing</h2>
+    <div class="spic"><img alt=""></div>
+    <label for="shareTitle">Title</label><input id="shareTitle" type="text" maxlength="60">
+    <label for="shareBlurb">About it</label><textarea id="shareBlurb" maxlength="300"></textarea>
+    <p class="note">It’ll be on the Scrappy Book site for everyone to see and add to their Doot, with your name.</p>
+    <div class="acts"><button class="btn" type="button" id="shareCancel">Cancel</button><button class="btn primary" type="button" id="shareGo">Share it</button></div>
+  </dialog>
   <dialog id="me">
     <h2>Your settings</h2>
     <label for="myName">Your name</label>
@@ -153,7 +167,7 @@
     <div class="vtop"><span class="vpos"></span><button class="x" type="button" aria-label="Close">×</button></div>
     <div class="vpic"><img alt=""><canvas></canvas></div>
     <div class="vinfo">
-      <h2></h2><p></p>
+      <h2></h2><span class="vby"></span><p></p>
       <div class="look" role="group" aria-label="Show it as"><button type="button" data-look="smooth">Smooth</button><button type="button" data-look="led">LED</button></div>
       <div class="row"><button class="heart" type="button"></button><a class="add">Add to my Doot</a></div>
       <div class="nav"><button type="button" data-step="-1">‹ Previous</button><button type="button" data-step="1">Next ›</button></div>
@@ -169,7 +183,8 @@ const svgURL=svg=>'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
 const ICON_HEART='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>';
 // The server (Supabase): hearts, comments and who's signed in. Anyone can look; hearting and commenting need
 // signing in with Google. Its rules (in supabase/schema.sql) let people change only their own things.
-const sb=supabase.createClient('https://jkiackmuihwqzvrgzhfu.supabase.co','sb_publishable_s3aZO-xGMBqOS9GbhqPlzQ_1NbLHJPI');
+const SB_URL='https://jkiackmuihwqzvrgzhfu.supabase.co',SB_KEY='sb_publishable_s3aZO-xGMBqOS9GbhqPlzQ_1NbLHJPI';
+const sb=supabase.createClient(SB_URL,SB_KEY);
 let user=null,profile=null,admin=false;
 const heartCount={},commentCount={};let mine=new Set();
 const hearts=d=>heartCount[d.id]||0;
@@ -208,7 +223,7 @@ function addButton(a,d){
   if(!ANDROID)a.addEventListener('click',e=>{e.preventDefault();toast('Doot is an Android app: open this page on your Android phone with Doot on it, and tap Add there.');});
 }
 const addLink=d=>{
-  const src=new URL('d/'+d.id+'.json',location.href).href;
+  const src=d.sid?SB_URL+'/rest/v1/rpc/shared_drawing?n='+d.sid+'&apikey='+SB_KEY:new URL('d/'+d.id+'.json',location.href).href;
   return 'intent://add?src='+encodeURIComponent(src)+'#Intent;scheme=doot;package=com.romansedition.doot;end';
 };
 function show(){
@@ -228,6 +243,7 @@ function show(){
     const hb=a.querySelector('.heart');hb.dataset.heart=d.id;heartButton(hb,d);hb.addEventListener('click',()=>{toggleHeart(d);if(sort.value==='hearts')show();});
     if(d.moves){const m=document.createElement('span');m.className='moves';m.textContent='Animation';a.querySelector('.pic').after(m);}
     a.querySelector('h2').textContent=d.title;a.querySelector('p').textContent=d.blurb||'';
+    if(d.by){const by=document.createElement('span');by.className='by';by.textContent='Shared by '+d.by;a.querySelector('h2').after(by);}
     a.querySelector('.tags').replaceChildren(...(d.tags||[]).map(t=>{const li=document.createElement('li');li.textContent=t;return li;}));
     addButton(a.querySelector('.add'),d);
     leds.set(a.querySelector('canvas'),{img,svg:d.svg,moves:d.moves,drawn:false});
@@ -248,6 +264,12 @@ function openView(d,toComments){
   view.scrollTop=0;loadComments(d).then(()=>{if(toComments)view.querySelector('.comments').scrollIntoView({block:'start'});});
   const img=view.querySelector('img');img.src=svgURL(d.svg);img.alt=d.title;
   view.querySelector('h2').textContent=d.title;view.querySelector('p').textContent=d.blurb||'';
+  const vby=view.querySelector('.vby');vby.replaceChildren();
+  if(d.by){vby.append('Shared by '+d.by);
+    if(user&&(d.uid===user.id||admin)){const x=Object.assign(document.createElement('button'),{type:'button',className:'link',textContent:'Delete'});
+      x.addEventListener('click',async()=>{if(!confirm('Delete “'+d.title+'” from the Scrappy Book site?'))return;
+        const r=await sb.from('shared_drawings').delete().eq('id',d.sid);if(r.error)return toast('It didn’t delete. Try again.');
+        openView(null);await loadShared();show();toast('Deleted.');});vby.append(' · ',x);}}
   const hb=view.querySelector('.heart');hb.dataset.heart=d.id;heartButton(hb,d);
   const va=view.querySelector('.add'),fresh=va.cloneNode(true);va.replaceWith(fresh);addButton(fresh,d); // no handlers from the last drawing
   const i=shown.indexOf(d);view.querySelector('.vpos').textContent=shown.length>1?(i+1)+' of '+shown.length:'';
@@ -369,6 +391,44 @@ document.getElementById('meSave').addEventListener('click',async()=>{
   if(r.error)return toast('That didn’t save. Try again.');
   profile=r.data;me.close();showAcct();if(viewing)loadComments(viewing);toast('Saved.');
 });
+// drawings people shared from their Doot (each "s<id>", for hearts and comments), newest first
+let curated=[],shared=[];
+async function loadShared(){
+  const r=await sb.from('shared_drawings_shown').select('*').order('created_at',{ascending:false}).limit(200);
+  shared=(r.data||[]).map(x=>({id:'s'+x.id,sid:x.id,uid:x.user_id,by:x.display_name,title:x.title,blurb:x.blurb,svg:x.svg,tags:x.tags||[],when:x.when_fits,moves:/<(animate|animateTransform|animateMotion|set)\b/i.test(x.svg)}));
+  all=shared.concat(curated);
+}
+// Share, from the app: it opens this page with the drawing in the link's # (kept here while you sign in, if you need to)
+const shareBox=document.getElementById('shareBox');let pending=null;
+function readShare(){
+  if(location.hash.startsWith('#share=')){
+    try{const b=atob(location.hash.slice(7).replace(/-/g,'+').replace(/_/g,'/'));pending=JSON.parse(new TextDecoder().decode(Uint8Array.from(b,c=>c.charCodeAt(0))));sessionStorage.setItem('sb.share',JSON.stringify(pending));}
+    catch(e){toast('That drawing didn’t come through. Try sharing it again from Doot.');}
+    history.replaceState(null,'',location.pathname);
+  }else{try{pending=JSON.parse(sessionStorage.getItem('sb.share')||'null')}catch(e){}}
+  if(pending&&!/^\s*<svg[\s>]/i.test(pending.svg||''))pending=null;
+}
+function offerShare(){
+  if(!pending||shareBox.open)return;
+  shareBox.querySelector('img').src=svgURL(pending.svg);
+  document.getElementById('shareTitle').value=(pending.title||'').slice(0,60);document.getElementById('shareBlurb').value=(pending.blurb||'').slice(0,300);
+  const go=document.getElementById('shareGo');go.textContent=user?'Share it':'Sign in with Google to share';
+  shareBox.showModal();
+}
+document.getElementById('shareCancel').addEventListener('click',()=>{pending=null;sessionStorage.removeItem('sb.share');shareBox.close();});
+document.getElementById('shareGo').addEventListener('click',async()=>{
+  if(!user)return signIn(); // back here afterwards, still holding the drawing
+  const title=document.getElementById('shareTitle').value.replace(/\s+/g,' ').trim();if(!title)return toast('Give it a title first.');
+  const go=document.getElementById('shareGo');go.disabled=true;
+  const r=await sb.from('shared_drawings').insert({title,blurb:document.getElementById('shareBlurb').value.trim(),svg:pending.svg.trim(),
+    tags:(pending.tags||[]).map(String).slice(0,8),when_fits:String(pending.when||'').slice(0,120)}).select('id').single();
+  go.disabled=false;
+  if(r.error)return toast(/plenty for today/.test(r.error.message)?'That’s plenty for today: up to 20 shared drawings a day.':'It didn’t share. It may be too big, or have something in it that isn’t allowed.');
+  pending=null;sessionStorage.removeItem('sb.share');shareBox.close();
+  await loadShared();show();toast('Shared! It’s in the Scrappy Book now.');
+  const d=all.find(x=>x.sid===r.data.id);if(d)openView(d);
+});
+readShare();
 async function signedIn(session){
   user=session?session.user:null;profile=null;admin=false;
   if(user){
@@ -376,6 +436,7 @@ async function signedIn(session){
     profile=p.data;admin=!!a.data;
   }
   showAcct();await loadCounts();if(all.length)show();if(viewing)openView(viewing);
+  offerShare();
 }
 sb.auth.onAuthStateChange((ev,session)=>{if(ev==='INITIAL_SESSION'||ev==='SIGNED_IN'||ev==='SIGNED_OUT')setTimeout(()=>signedIn(session));});
 
@@ -443,7 +504,7 @@ function setLook(v){
 }
 document.querySelectorAll('.look button').forEach(b=>b.addEventListener('click',()=>setLook(b.dataset.look)));
 setLook(look==='led'?'led':'smooth');
-fetch('drawings.json').then(r=>r.json()).then(async d=>{all=d;show();await loadCounts();show();}).catch(()=>{list.innerHTML='<p class="empty">The drawings didn’t load. Try refreshing.</p>';});
+fetch('drawings.json').then(r=>r.json()).then(async d=>{curated=d;all=d;show();await loadShared();await loadCounts();show();}).catch(()=>{list.innerHTML='<p class="empty">The drawings didn’t load. Try refreshing.</p>';});
 </script>
 </body>
 </html>
