@@ -30,7 +30,7 @@
   .lede{flex-basis:100%;margin:4px 0 0;color:var(--muted);max-width:60ch}
   .find{max-width:1100px;margin:0 auto;padding:12px 16px}
   .find{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-  /* the search, Smooth / LED and sort stay at the top as you scroll */
+  /* the search, LED / Smooth and sort stay at the top as you scroll */
   .find{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid transparent}
   .find.stuck{border-bottom-color:var(--line);box-shadow:0 6px 16px rgba(0,0,0,.25)}
   .look{display:flex;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px}
@@ -157,7 +157,7 @@
     <p class="lede">Drawings from Doot’s Scrappy Book. Tap <b>Add to my Doot</b> on your phone to put one in yours.</p>
   </header>
   <div class="find"><input id="find" type="search" placeholder="Find a drawing" aria-label="Find a drawing">
-    <div class="look" role="group" aria-label="Show drawings as"><button type="button" data-look="smooth">Smooth</button><button type="button" data-look="led">LED</button></div>
+    <div class="look" role="group" aria-label="Show drawings as"><button type="button" data-look="led">LED</button><button type="button" data-look="smooth">Smooth</button></div>
     <select class="sort" id="sort" aria-label="Sort by"><option value="new">Newest</option><option value="hearts">Most hearted</option></select></div>
   <main id="list"></main>
   <footer>A test page, not public yet.</footer>
@@ -186,7 +186,7 @@
     <div class="vpic"><img alt=""><canvas></canvas></div>
     <div class="vinfo">
       <h2></h2><span class="vby"></span><p></p>
-      <div class="look" role="group" aria-label="Show it as"><button type="button" data-look="smooth">Smooth</button><button type="button" data-look="led">LED</button></div>
+      <div class="look" role="group" aria-label="Show it as"><button type="button" data-look="led">LED</button><button type="button" data-look="smooth">Smooth</button></div>
       <div class="row"><button class="heart" type="button"></button><a class="add">Add to my Doot</a></div>
       <div class="nav"><button type="button" data-step="-1">‹ Previous</button><button type="button" data-step="1">Next ›</button></div>
       <section class="comments" aria-label="Comments"><h3></h3><ol></ol><div class="say"></div></section>
@@ -542,7 +542,9 @@ sb.auth.onAuthStateChange((ev,session)=>{if(ev==='INITIAL_SESSION'||ev==='SIGNED
 // (they'd vanish on the dark screen otherwise), each light at one of three brightnesses. An animation is played from
 // frames made once (a hidden image stops moving), each the drawing at one moment of its loop, only while on screen.
 const COLS=64,MINT=[99,227,200],leds=new Map();
-let look='smooth';try{look=localStorage.getItem('sb.look')||'smooth'}catch(e){}
+// LED unless it's been changed here (kept as sb.style once a button's tapped; sb.look was saved on every visit, so
+// it's left behind)
+let look='led';try{look=localStorage.getItem('sb.style')||'led'}catch(e){}
 if(location.hash==='#led'||location.hash==='#smooth')look=location.hash.slice(1); // a link can say which
 const smalls={};
 function paint(c,img,COLS=64){
@@ -594,14 +596,14 @@ function tick(t){
   }
 }
 requestAnimationFrame(tick);
-function setLook(v){
+function setLook(v,keep){
   look=v;document.body.classList.toggle('led',v==='led');
   document.querySelectorAll('.look button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.look===v)));
   leds.forEach(s=>{s.drawn=false;});
-  try{localStorage.setItem('sb.look',v)}catch(e){}
+  if(keep)try{localStorage.setItem('sb.style',v)}catch(e){}
 }
-document.querySelectorAll('.look button').forEach(b=>b.addEventListener('click',()=>setLook(b.dataset.look)));
-setLook(look==='led'?'led':'smooth');
+document.querySelectorAll('.look button').forEach(b=>b.addEventListener('click',()=>setLook(b.dataset.look,true)));
+setLook(look==='smooth'?'smooth':'led');
 fetch('drawings.json').then(r=>r.json()).then(async d=>{curated=d;all=d;show();await loadShared();await loadCounts();show();}).catch(()=>{list.innerHTML='<p class="empty">The drawings didn’t load. Try refreshing.</p>';});
 </script>
 </body>
