@@ -274,23 +274,67 @@ const addLink=d=>{
   const src=d.sid?SB_URL+'/rest/v1/rpc/shared_drawing?n='+d.sid+'&apikey='+SB_KEY:new URL((d.sketch?'k/'+d.file:'d/'+d.id)+'.json',location.href).href;
   return 'intent://add?src='+encodeURIComponent(src)+'#Intent;scheme=doot;package=com.romansedition.doot;end';
 };
-// the cards go in 40 at a time as the page scrolls down (there are thousands, with Doot's sketches): 40 on opening
-// or a new search, the next 40 once you scroll near the end
+// The cards go in 40 at a time as the page scrolls down: 40 on opening or a new search, the next 40 once you
+// scroll near the end. Shared drawings (in time, most of them) come from the server 40 at a time too, never all at
+// once: newest first, searched on the server; then the examples and Doot's sketches (kept here, in drawings.json
+// and sketches.json). Most hearted: every drawing with hearts, most first (shared or not), then the rest, newest first.
 const PAGE=40,more=Object.assign(document.createElement('div'),{className:'more'});let upTo=0;
-new IntersectionObserver(([e])=>{if(e.isIntersecting&&upTo<shown.length)addCards();},{rootMargin:'800px'}).observe(more);
-function addCards(){
-  more.before(...shown.slice(upTo,upTo+PAGE).map(card));upTo=Math.min(shown.length,upTo+PAGE);
-  // the observer only says when it comes near, so if it's still near (a tall screen), more now
-  requestAnimationFrame(()=>{if(more.isConnected&&upTo<shown.length&&more.getBoundingClientRect().top<innerHeight+800)addCards();});
+new IntersectionObserver(([e])=>{if(e.isIntersecting)addCards();},{rootMargin:'800px'}).observe(more);
+let sources=[],srcAt=0,run=0,adding=false;
+const matches=(d,q)=>!q||[d.title,d.blurb,...(d.tags||[])].join(' ').toLowerCase().includes(q);
+const asShared=x=>({hidden:x.hidden,id:'s'+x.id,sid:x.id,uid:x.user_id,by:x.display_name,title:x.title,blurb:x.blurb,svg:x.svg,tags:x.tags||[],when:x.when_fits,moves:/<(animate|animateTransform|animateMotion|set)\b/i.test(x.svg)});
+// a search as the server takes it: its words and spaces only (it goes inside the server's own query)
+const forServer=q=>q.replace(/[^\p{L}\p{N} '-]/gu,' ').replace(/\s+/g,' ').trim();
+// shared drawings, newest first, [n] at a time from [from], that match [q] (title, about it, or a tag)
+function sharedQuery(q){
+  let r=sb.from('shared_drawings_shown').select('*').eq('hidden',false);
+  const w=forServer(q);if(w)r=r.or(`title.ilike."*${w}*",blurb.ilike."*${w}*",tags.cs.{"${w}"}`);
+  return r;
 }
-function show(){
-  const q=find.value.trim().toLowerCase();
-  shown=all.filter(d=>!q||[d.title,d.blurb,...(d.tags||[])].join(' ').toLowerCase().includes(q));
-  if(sort.value==='hearts')shown=shown.map((d,i)=>[d,i]).sort((x,y)=>hearts(y[0])-hearts(x[0])||x[1]-y[1]).map(x=>x[0]);
-  // as many as were showing (so a heart or a refresh doesn't jump back to the top), and at least a page
-  const n=Math.max(PAGE,upTo);upTo=0;list.replaceChildren(more);
-  while(upTo<Math.min(n,shown.length))addCards();
-  if(!shown.length)list.innerHTML='<p class="empty">No drawings match that.</p>';
+function newestShared(q,skip){
+  let from=0;
+  return async()=>{
+    const r=await sharedQuery(q).order('created_at',{ascending:false}).range(from,from+PAGE-1);from+=PAGE;
+    const got=(r.data||[]).map(asShared);
+    return {items:got.filter(d=>!skip||!skip.has(d.id)),done:got.length<PAGE};
+  };
+}
+const local=(q,keep)=>async()=>({items:curated.concat(sketches).filter(d=>!removed.has(d.id)&&matches(d,q)&&(!keep||keep(d))),done:true});
+// the drawings with hearts, most first, [PAGE] at a time: the shared ones among them fetched as they come
+function hearted(q){
+  const ids=Object.keys(heartCount).filter(id=>heartCount[id]>0).sort((a,b)=>heartCount[b]-heartCount[a]);let at=0;
+  return async()=>{
+    const page=ids.slice(at,at+PAGE);at+=PAGE;
+    const sids=page.filter(id=>/^s\d+$/.test(id)).map(id=>+id.slice(1)),byId={};
+    if(sids.length){const r=await sb.from('shared_drawings_shown').select('*').eq('hidden',false).in('id',sids);(r.data||[]).forEach(x=>{byId['s'+x.id]=asShared(x);});}
+    const here=new Map(curated.concat(sketches).map(d=>[d.id,d]));
+    const items=page.map(id=>byId[id]||here.get(id)).filter(d=>d&&!removed.has(d.id)&&matches(d,q));
+    return {items,done:at>=ids.length};
+  };
+}
+// the next 40 cards, fetching more first if they aren't here yet
+async function addCards(){
+  if(adding)return;adding=true;const me=run;
+  try{
+    while(upTo+PAGE>shown.length&&srcAt<sources.length){
+      const {items,done}=await sources[srcAt]();if(me!==run)return;
+      shown.push(...items);if(done)srcAt++;
+    }
+    if(me!==run)return;
+    const next=shown.slice(upTo,upTo+PAGE);more.before(...next.map(card));upTo+=next.length;
+    if(!shown.length)more.before(Object.assign(document.createElement('p'),{className:'empty',textContent:'No drawings match that.'}));
+  }finally{if(me===run)adding=false;}
+  // the observer only says when it comes near, so if it's still near (a tall screen), more now
+  requestAnimationFrame(()=>{if(more.isConnected&&(upTo<shown.length||srcAt<sources.length)&&more.getBoundingClientRect().top<innerHeight+800)addCards();});
+}
+// the list afresh: as many as were showing (so a heart or a refresh doesn't jump back to the top), and at least a page
+async function show(){
+  const q=find.value.trim().toLowerCase(),n=Math.max(PAGE,upTo);
+  run++;adding=false;shown=[];srcAt=0;upTo=0;list.replaceChildren(more);
+  if(sort.value==='hearts'){const withHearts=new Set(Object.keys(heartCount).filter(id=>heartCount[id]>0));
+    sources=[hearted(q),newestShared(q,withHearts),local(q,d=>!withHearts.has(d.id))];}
+  else sources=[newestShared(q),local(q)];
+  while(upTo<n&&(upTo<shown.length||srcAt<sources.length)){const before=upTo;await addCards();if(upTo===before)break;}
 }
 function card(d){
     const a=document.createElement('article');a.className='card';
@@ -333,7 +377,7 @@ function openView(d,toComments){
   leds.set(view.querySelector('canvas'),{img,svg:d.svg,moves:d.moves,drawn:false,cols:100});
   view.querySelector('.x').focus();
 }
-const step=by=>{const i=shown.indexOf(viewing),n=shown[i+by];if(n)openView(n);};
+const step=async by=>{const i=shown.indexOf(viewing);if(by>0&&i+by>=shown.length)await addCards();const n=shown[i+by];if(n)openView(n);};
 view.querySelector('.x').addEventListener('click',()=>openView(null));
 view.querySelector('.heart').addEventListener('click',()=>{if(viewing){toggleHeart(viewing);}});
 view.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>step(+b.dataset.step)));
@@ -493,13 +537,15 @@ function reportLink(d){
 }
 // drawings people shared from their Doot (each "s<id>", for hearts and comments), newest first
 // and Doot's sketches (sketches.json): the drawings made to teach Doot's phone brain to draw, each "sketch-<what>"
-let curated=[],shared=[],allShared=[],removed=new Set(),sketches=[];
+let curated=[],removed=new Set(),sketches=[];
+// which of the examples and sketches Roman took off the site (the shared ones are fetched as they're shown, see show)
 async function loadShared(){
   const g=await sb.from('removed_drawings').select('drawing_id');removed=new Set((g.data||[]).map(x=>x.drawing_id));
-  const r=await sb.from('shared_drawings_shown').select('*').order('created_at',{ascending:false}).limit(200);
-  allShared=(r.data||[]).map(x=>({hidden:x.hidden,id:'s'+x.id,sid:x.id,uid:x.user_id,by:x.display_name,title:x.title,blurb:x.blurb,svg:x.svg,tags:x.tags||[],when:x.when_fits,moves:/<(animate|animateTransform|animateMotion|set)\b/i.test(x.svg)}));
-  shared=allShared.filter(d=>!d.hidden);
-  all=shared.concat(curated,sketches).filter(d=>!removed.has(d.id));
+}
+// shared drawings by id ("s12"), hidden ones too (only whoever shared them and Roman can see those)
+async function sharedByIds(ids){
+  const sids=ids.filter(id=>/^s\d+$/.test(id)).map(id=>+id.slice(1));if(!sids.length)return [];
+  const r=await sb.from('shared_drawings_shown').select('*').in('id',sids);return (r.data||[]).map(asShared);
 }
 // Share, from the app: it opens this page with the drawing in the link's # (kept here while you sign in, if you need to)
 const shareBox=document.getElementById('shareBox');let pending=null;
@@ -528,8 +574,8 @@ document.getElementById('shareGo').addEventListener('click',async()=>{
   go.disabled=false;
   if(r.error)return toast(/plenty for today/.test(r.error.message)?'That’s plenty for today: up to 20 shared drawings a day.':'It didn’t share. It may be too big, or have something in it that isn’t allowed.');
   pending=null;sessionStorage.removeItem('sb.share');shareBox.close();
-  await loadShared();show();toast('Shared! It’s in the Scrappy Book now.');
-  const d=all.find(x=>x.sid===r.data.id);if(d)openView(d);
+  await loadShared();await show();toast('Shared! It’s in the Scrappy Book now.');
+  const d=shown.find(x=>x.sid===r.data.id);if(d)openView(d);
 });
 readShare();
 const repEl=document.getElementById('reports');
@@ -540,7 +586,7 @@ async function countReports(){
   const n=new Set((r.data||[]).map(x=>x.drawing_id)).size,b=document.getElementById('reportedBtn');
   if(b){b.textContent='Reported';if(n){const c=document.createElement('span');c.className='nrep';c.textContent=n;b.append(c);}b.setAttribute('aria-label','Reported images, '+n);}
 }
-const findDrawing=id=>allShared.find(d=>d.id===id)||curated.find(d=>d.id===id)||sketches.find(d=>d.id===id);
+const findDrawing=id=>shown.find(d=>d.id===id)||curated.find(d=>d.id===id)||sketches.find(d=>d.id===id);
 function repRow(d,info,acts){
   const li=document.createElement('li');li.innerHTML='<img alt=""><div class="rinfo"><b></b><span></span></div><div class="racts"></div>';
   li.querySelector('img').src=svgURL(d.svg);li.querySelector('img').alt=d.title;li.querySelector('b').textContent=d.title;li.querySelector('span').textContent=info;
@@ -557,8 +603,9 @@ async function openReports(on){
   const r=await sb.from('drawing_reports').select('drawing_id,created_at');
   const by={};(r.data||[]).forEach(x=>{(by[x.drawing_id]=by[x.drawing_id]||[]).push(x.created_at);});
   const rep=document.getElementById('repList');rep.replaceChildren();
+  const reported=new Map((await sharedByIds(Object.keys(by))).map(d=>[d.id,d]));
   Object.entries(by).sort((a,b)=>b[1].length-a[1].length).forEach(([id,times])=>{
-    const d=findDrawing(id);
+    const d=reported.get(id)||findDrawing(id);
     if(!d){clearReports({id});return;} // gone already: its reports go too
     const gone=d.hidden||removed.has(d.id),n=times.length;
     rep.append(repRow(d,n+' report'+(n>1?'s':'')+(d.sid?' · shared by '+d.by:' · an example')+(gone?' · hidden for now':''),[
@@ -568,7 +615,8 @@ async function openReports(on){
   });
   if(!rep.children.length)rep.innerHTML='<li class="none">Nothing reported. 🎉</li>';
   const goneList=document.getElementById('goneList');goneList.replaceChildren();
-  allShared.filter(d=>d.hidden).forEach(d=>goneList.append(repRow(d,'Shared by '+d.by+' · hidden',[['Restore',()=>sb.from('shared_drawings').update({hidden:false}).eq('id',d.sid),true],['Delete',()=>sb.from('shared_drawings').delete().eq('id',d.sid)]])));
+  const hid=await sb.from('shared_drawings_shown').select('*').eq('hidden',true).order('created_at',{ascending:false}).limit(500);
+  (hid.data||[]).map(asShared).forEach(d=>goneList.append(repRow(d,'Shared by '+d.by+' · hidden',[['Restore',()=>sb.from('shared_drawings').update({hidden:false}).eq('id',d.sid),true],['Delete',()=>sb.from('shared_drawings').delete().eq('id',d.sid)]])));
   curated.concat(sketches).filter(d=>removed.has(d.id)).forEach(d=>goneList.append(repRow(d,(d.sketch?'One of Doot’s sketches':'An example')+' · removed',[['Restore',()=>sb.from('removed_drawings').delete().eq('drawing_id',d.id),true]])));
   if(!goneList.children.length)goneList.innerHTML='<li class="none">Nothing hidden or removed.</li>';
 }
@@ -624,7 +672,7 @@ async function signedIn(session){
     const [p,a]=await Promise.all([sb.from('profiles').select('*').eq('id',user.id).maybeSingle(),sb.rpc('is_admin')]);
     profile=p.data;admin=!!a.data;
   }
-  showAcct();await loadCounts();if(all.length)show();if(viewing)openView(viewing);
+  showAcct();await loadCounts();if(curated.length)await show();if(viewing)openView(viewing);
   offerShare();
 }
 sb.auth.onAuthStateChange((ev,session)=>{if(ev==='INITIAL_SESSION'||ev==='SIGNED_IN'||ev==='SIGNED_OUT')setTimeout(()=>signedIn(session));});
@@ -695,11 +743,11 @@ function setLook(v,keep){
 }
 document.querySelectorAll('.look button').forEach(b=>b.addEventListener('click',()=>setLook(b.dataset.look,true)));
 setLook(look==='smooth'?'smooth':'led');
-fetch('drawings.json').then(r=>r.json()).then(async d=>{curated=d;all=d;show();await loadShared();await loadCounts();show();}).catch(()=>{list.innerHTML='<p class="empty">The drawings didn’t load. Try refreshing.</p>';});
+fetch('drawings.json').then(r=>r.json()).then(async d=>{curated=d;await loadShared();await loadCounts();await show();}).catch(()=>{list.innerHTML='<p class="empty">The drawings didn’t load. Try refreshing.</p>';});
 // Doot's sketches come after (a bigger file), and go on the end of the list
 fetch('sketches.json').then(r=>r.json()).then(s=>{
   sketches=s.map(x=>({...x,blurb:'',sketch:true,moves:false}));
-  if(curated.length){all=shared.concat(curated,sketches).filter(d=>!removed.has(d.id));show();}
+  if(curated.length)show();
   if(!starEl.hidden)openStarred(true);
 }).catch(()=>{});
 </script>
