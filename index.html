@@ -274,8 +274,9 @@ const addLink=d=>{
   const src=d.sid?SB_URL+'/rest/v1/rpc/shared_drawing?n='+d.sid+'&apikey='+SB_KEY:new URL((d.sketch?'k/'+d.file:'d/'+d.id)+'.json',location.href).href;
   return 'intent://add?src='+encodeURIComponent(src)+'#Intent;scheme=doot;package=com.romansedition.doot;end';
 };
-// the cards go in a few dozen at a time as the page scrolls down (there are thousands, with Doot's sketches)
-const PAGE=60,more=Object.assign(document.createElement('div'),{className:'more'});let upTo=0;
+// the cards go in 40 at a time as the page scrolls down (there are thousands, with Doot's sketches): 40 on opening
+// or a new search, the next 40 once you scroll near the end
+const PAGE=40,more=Object.assign(document.createElement('div'),{className:'more'});let upTo=0;
 new IntersectionObserver(([e])=>{if(e.isIntersecting&&upTo<shown.length)addCards();},{rootMargin:'800px'}).observe(more);
 function addCards(){
   more.before(...shown.slice(upTo,upTo+PAGE).map(card));upTo=Math.min(shown.length,upTo+PAGE);
