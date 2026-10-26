@@ -113,6 +113,26 @@
   #reports .rinfo{flex:1;min-width:0}#reports .rinfo b{display:block}#reports .rinfo span{color:var(--muted);font-size:13px}
   #reports .racts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
   #reports .none{color:var(--muted)}
+  /* Starred drawings (the admin's): the shortlist of Doot's sketches, to star its 500 treasured drawings */
+  #starred{position:fixed;inset:0;z-index:12;background:var(--bg);overflow-y:auto}
+  #starred[hidden]{display:none}
+  #starred .rtop{position:sticky;top:0;z-index:1;background:var(--bg);display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;padding:14px 16px;border-bottom:1px solid var(--line)}
+  #starred .rtop h2{margin:0;font-size:22px;flex:1 1 auto}
+  .stcount{font-family:var(--f-display);font-weight:800;font-size:26px;line-height:1;color:var(--fg)}
+  .stcount small{font-family:var(--f-body);font-weight:600;font-size:13px;color:var(--muted);margin-left:6px}
+  .stcount.done{color:var(--mint)}.stcount.over{color:var(--orange)}
+  .stnote{max-width:1100px;margin:12px auto 0;padding:0 16px;color:var(--muted);font-size:14px}
+  .stgrid{max-width:1100px;margin:0 auto;padding:12px 16px 48px;display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
+  .st{position:relative;display:flex;flex-direction:column;gap:4px;font:inherit;color:var(--fg);text-align:left;background:var(--surface);border:2px solid var(--line);border-radius:14px;padding:6px;cursor:pointer}
+  .st img{width:100%;aspect-ratio:1;object-fit:contain;background:var(--paper);border-radius:10px;padding:6%}
+  .st span{font-size:12px;line-height:1.3;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .st .star{position:absolute;top:10px;right:10px;width:30px;height:30px;border-radius:999px;display:grid;place-items:center;background:rgba(15,21,20,.75);color:var(--muted)}
+  .st .star svg{width:18px;height:18px}
+  .st[aria-pressed="true"]{border-color:#F5C542}
+  .st[aria-pressed="true"] .star{background:#F5C542;color:#3A2A00}
+  .st[aria-pressed="true"] .star path{fill:currentColor}
+  .st:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+  .more{grid-column:1/-1;height:1px}
   .btn{font:inherit;font-weight:600;font-size:14px;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer}
   .btn.primary{background:var(--mint);border-color:var(--mint);color:#10201C}
   .btn.small{font-size:13px;padding:5px 10px}
@@ -165,6 +185,14 @@
   <section id="reports" role="dialog" aria-modal="true" aria-label="Reported Images" hidden>
     <div class="rtop"><h2>Reported Images</h2><button class="x btn" type="button" aria-label="Close">×</button></div>
     <div class="rbody"><h3>Reported</h3><ul id="repList"></ul><h3>Hidden or removed</h3><ul id="goneList"></ul></div>
+  </section>
+  <section id="starred" role="dialog" aria-modal="true" aria-label="Starred drawings" hidden>
+    <div class="rtop"><h2>Starred drawings</h2><span class="stcount" id="stCount" aria-live="polite"></span>
+      <select class="sort" id="stShow" aria-label="Show"><option value="all">All 700</option><option value="on">Starred</option><option value="off">Not starred</option></select>
+      <button class="btn small" type="button" id="stCopy">Copy the starred list</button>
+      <button class="x btn" type="button" aria-label="Close">×</button></div>
+    <p class="stnote">The shortlist for Doot’s 500 treasured drawings. Tap a drawing to star it, or take its star off.</p>
+    <div class="stgrid" id="stGrid"></div>
   </section>
   <dialog id="shareBox">
     <h2>Share a drawing</h2>
@@ -243,14 +271,27 @@ function addButton(a,d){
   if(!ANDROID)a.addEventListener('click',e=>{e.preventDefault();toast('Doot is an Android app: open this page on your Android phone with Doot on it, and tap Add there.');});
 }
 const addLink=d=>{
-  const src=d.sid?SB_URL+'/rest/v1/rpc/shared_drawing?n='+d.sid+'&apikey='+SB_KEY:new URL('d/'+d.id+'.json',location.href).href;
+  const src=d.sid?SB_URL+'/rest/v1/rpc/shared_drawing?n='+d.sid+'&apikey='+SB_KEY:new URL((d.sketch?'k/'+d.file:'d/'+d.id)+'.json',location.href).href;
   return 'intent://add?src='+encodeURIComponent(src)+'#Intent;scheme=doot;package=com.romansedition.doot;end';
 };
+// the cards go in a few dozen at a time as the page scrolls down (there are thousands, with Doot's sketches)
+const PAGE=60,more=Object.assign(document.createElement('div'),{className:'more'});let upTo=0;
+new IntersectionObserver(([e])=>{if(e.isIntersecting&&upTo<shown.length)addCards();},{rootMargin:'800px'}).observe(more);
+function addCards(){
+  more.before(...shown.slice(upTo,upTo+PAGE).map(card));upTo=Math.min(shown.length,upTo+PAGE);
+  // the observer only says when it comes near, so if it's still near (a tall screen), more now
+  requestAnimationFrame(()=>{if(more.isConnected&&upTo<shown.length&&more.getBoundingClientRect().top<innerHeight+800)addCards();});
+}
 function show(){
   const q=find.value.trim().toLowerCase();
   shown=all.filter(d=>!q||[d.title,d.blurb,...(d.tags||[])].join(' ').toLowerCase().includes(q));
   if(sort.value==='hearts')shown=shown.map((d,i)=>[d,i]).sort((x,y)=>hearts(y[0])-hearts(x[0])||x[1]-y[1]).map(x=>x[0]);
-  list.replaceChildren(...shown.map(d=>{
+  // as many as were showing (so a heart or a refresh doesn't jump back to the top), and at least a page
+  const n=Math.max(PAGE,upTo);upTo=0;list.replaceChildren(more);
+  while(upTo<Math.min(n,shown.length))addCards();
+  if(!shown.length)list.innerHTML='<p class="empty">No drawings match that.</p>';
+}
+function card(d){
     const a=document.createElement('article');a.className='card';
     a.innerHTML='<div class="pic"><img alt=""><canvas></canvas></div><h2></h2><p></p><ul class="tags"></ul><div class="row"><button class="heart" type="button"></button><button class="chip talk" type="button"></button><a class="add">Add</a></div>';
     const tb=a.querySelector('.talk');tb.innerHTML=ICON_TALK+'<span></span>';tb.querySelector('span').textContent=commentCount[d.id]||0;
@@ -268,11 +309,10 @@ function show(){
     addButton(a.querySelector('.add'),d);
     leds.set(a.querySelector('canvas'),{img,svg:d.svg,moves:d.moves,drawn:false});
     return a;
-  }));
-  if(!shown.length)list.innerHTML='<p class="empty">No drawings match that.</p>';
 }
-find.addEventListener('input',show);
-sort.addEventListener('change',show);
+const fromTop=()=>{upTo=0;show();};
+find.addEventListener('input',fromTop);
+sort.addEventListener('change',fromTop);
 // a line under the bar once the page has scrolled beneath it
 const bar=document.querySelector('.find');
 new IntersectionObserver(([e])=>bar.classList.toggle('stuck',!e.isIntersecting)).observe(document.querySelector('header'));
@@ -399,6 +439,8 @@ function showAcct(){
   if(admin){
     const rb=Object.assign(document.createElement('button'),{type:'button',className:'btn',textContent:'Reported'});rb.id='reportedBtn';
     rb.addEventListener('click',()=>openReports(true));acct.prepend(rb);countReports();
+    const st=Object.assign(document.createElement('button'),{type:'button',className:'btn',textContent:'Starred'});
+    st.addEventListener('click',()=>openStarred(true));acct.prepend(st);
   }
   acct.append(b);
 }
@@ -430,6 +472,7 @@ function deleteLink(d){
 function drawingLine(el,d){
   el.replaceChildren();const bits=[];
   if(d.by)bits.push('Shared by '+d.by);
+  if(d.sketch)bits.push('One of Doot’s sketches');
   const x=deleteLink(d);if(x)bits.push(x);
   const rp=reportLink(d);if(rp)bits.push(rp);
   bits.forEach((b,i)=>{if(i)el.append(' · ');el.append(b);});
@@ -448,13 +491,14 @@ function reportLink(d){
   return x;
 }
 // drawings people shared from their Doot (each "s<id>", for hearts and comments), newest first
-let curated=[],shared=[],allShared=[],removed=new Set();
+// and Doot's sketches (sketches.json): the drawings made to teach Doot's phone brain to draw, each "sketch-<what>"
+let curated=[],shared=[],allShared=[],removed=new Set(),sketches=[];
 async function loadShared(){
   const g=await sb.from('removed_drawings').select('drawing_id');removed=new Set((g.data||[]).map(x=>x.drawing_id));
   const r=await sb.from('shared_drawings_shown').select('*').order('created_at',{ascending:false}).limit(200);
   allShared=(r.data||[]).map(x=>({hidden:x.hidden,id:'s'+x.id,sid:x.id,uid:x.user_id,by:x.display_name,title:x.title,blurb:x.blurb,svg:x.svg,tags:x.tags||[],when:x.when_fits,moves:/<(animate|animateTransform|animateMotion|set)\b/i.test(x.svg)}));
   shared=allShared.filter(d=>!d.hidden);
-  all=shared.concat(curated.filter(d=>!removed.has(d.id)));
+  all=shared.concat(curated,sketches).filter(d=>!removed.has(d.id));
 }
 // Share, from the app: it opens this page with the drawing in the link's # (kept here while you sign in, if you need to)
 const shareBox=document.getElementById('shareBox');let pending=null;
@@ -495,7 +539,7 @@ async function countReports(){
   const n=new Set((r.data||[]).map(x=>x.drawing_id)).size,b=document.getElementById('reportedBtn');
   if(b){b.textContent='Reported';if(n){const c=document.createElement('span');c.className='nrep';c.textContent=n;b.append(c);}b.setAttribute('aria-label','Reported images, '+n);}
 }
-const findDrawing=id=>allShared.find(d=>d.id===id)||curated.find(d=>d.id===id);
+const findDrawing=id=>allShared.find(d=>d.id===id)||curated.find(d=>d.id===id)||sketches.find(d=>d.id===id);
 function repRow(d,info,acts){
   const li=document.createElement('li');li.innerHTML='<img alt=""><div class="rinfo"><b></b><span></span></div><div class="racts"></div>';
   li.querySelector('img').src=svgURL(d.svg);li.querySelector('img').alt=d.title;li.querySelector('b').textContent=d.title;li.querySelector('span').textContent=info;
@@ -524,9 +568,55 @@ async function openReports(on){
   if(!rep.children.length)rep.innerHTML='<li class="none">Nothing reported. 🎉</li>';
   const goneList=document.getElementById('goneList');goneList.replaceChildren();
   allShared.filter(d=>d.hidden).forEach(d=>goneList.append(repRow(d,'Shared by '+d.by+' · hidden',[['Restore',()=>sb.from('shared_drawings').update({hidden:false}).eq('id',d.sid),true],['Delete',()=>sb.from('shared_drawings').delete().eq('id',d.sid)]])));
-  curated.filter(d=>removed.has(d.id)).forEach(d=>goneList.append(repRow(d,'An example · removed',[['Restore',()=>sb.from('removed_drawings').delete().eq('drawing_id',d.id),true]])));
+  curated.concat(sketches).filter(d=>removed.has(d.id)).forEach(d=>goneList.append(repRow(d,(d.sketch?'One of Doot’s sketches':'An example')+' · removed',[['Restore',()=>sb.from('removed_drawings').delete().eq('drawing_id',d.id),true]])));
   if(!goneList.children.length)goneList.innerHTML='<li class="none">Nothing hidden or removed.</li>';
 }
+// Starred drawings (the admin's): the shortlist of Doot's sketches, kept on the server where only admins can read it
+// (supabase/sketch-stars.sql), with a star on each one picked for Doot's 500 treasured drawings
+const GOAL=500,ICON_STAR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l2.8 5.8 6.2.9-4.5 4.4 1 6.3L12 17.5 6.5 20.4l1-6.3L3 9.7l6.2-.9z"/></svg>';
+const starEl=document.getElementById('starred'),stGrid=document.getElementById('stGrid'),stCount=document.getElementById('stCount'),stShow=document.getElementById('stShow');
+let shortlist=[],stars=new Set();
+starEl.querySelector('.x').addEventListener('click',()=>openStarred(false));
+addEventListener('keydown',e=>{if(e.key==='Escape'&&!starEl.hidden)openStarred(false);});
+function countStars(){
+  const n=stars.size;stCount.className='stcount'+(n===GOAL?' done':n>GOAL?' over':'');
+  stCount.innerHTML=n+' / '+GOAL+'<small>'+(n===GOAL?'that’s 500!':n>GOAL?(n-GOAL)+' too many':(GOAL-n)+' to go')+'</small>';
+}
+function starTile(d){
+  const b=document.createElement('button');b.type='button';b.className='st';b.dataset.id=d.id;
+  b.innerHTML='<img alt="" loading="lazy"><span></span><i class="star" aria-hidden="true">'+ICON_STAR+'</i>';
+  b.querySelector('img').src=svgURL(d.svg);b.querySelector('span').textContent=d.title;
+  const paint=()=>{b.setAttribute('aria-pressed',String(stars.has(d.id)));b.setAttribute('aria-label',(stars.has(d.id)?'Take the star off ':'Star ')+d.title);};
+  paint();
+  // shown at once, then saved; put back if saving fails
+  b.addEventListener('click',async()=>{
+    const on=!stars.has(d.id);on?stars.add(d.id):stars.delete(d.id);paint();countStars();
+    const r=on?await sb.from('sketch_stars').insert({sketch_id:d.id}):await sb.from('sketch_stars').delete().eq('sketch_id',d.id);
+    if(r.error&&!(on&&r.error.code==='23505')){on?stars.delete(d.id):stars.add(d.id);paint();countStars();toast('That star didn’t save. Try again.');}
+  });
+  return b;
+}
+function showStarred(){
+  const v=stShow.value,list=shortlist.filter(d=>v==='all'||(v==='on')===stars.has(d.id));
+  stGrid.replaceChildren(...list.map(starTile));
+  if(!list.length)stGrid.innerHTML='<p class="empty">'+(v==='on'?'Nothing starred yet.':'Every one is starred.')+'</p>';
+}
+stShow.addEventListener('change',showStarred);
+async function openStarred(on){
+  starEl.hidden=!on;document.body.style.overflow=on?'hidden':'';if(!on)return;
+  if(!sketches.length){stGrid.innerHTML='<p class="empty">Loading Doot’s sketches…</p>';return;} // shown when they arrive
+  const [l,s]=await Promise.all([sb.from('sketch_shortlist').select('sketch_id').limit(5000),sb.from('sketch_stars').select('sketch_id').limit(5000)]);
+  if(l.error){stCount.textContent='';stGrid.innerHTML='<p class="empty">The shortlist isn’t on the server yet: run its setup SQL in Supabase’s SQL editor first.</p>';return;}
+  const ids=new Set((l.data||[]).map(x=>x.sketch_id));
+  shortlist=sketches.filter(d=>ids.has(d.id));stars=new Set((s.data||[]).map(x=>x.sketch_id));
+  stShow.options[0].textContent='All '+shortlist.length;
+  countStars();showStarred();
+}
+document.getElementById('stCopy').addEventListener('click',async()=>{
+  const list=shortlist.filter(d=>stars.has(d.id)).map(d=>d.id);
+  try{await navigator.clipboard.writeText(JSON.stringify(list));toast('Copied '+list.length+' starred drawings.');}
+  catch(e){toast('It didn’t copy. Try again.');}
+});
 async function signedIn(session){
   user=session?session.user:null;profile=null;admin=false;
   if(user){
@@ -605,6 +695,12 @@ function setLook(v,keep){
 document.querySelectorAll('.look button').forEach(b=>b.addEventListener('click',()=>setLook(b.dataset.look,true)));
 setLook(look==='smooth'?'smooth':'led');
 fetch('drawings.json').then(r=>r.json()).then(async d=>{curated=d;all=d;show();await loadShared();await loadCounts();show();}).catch(()=>{list.innerHTML='<p class="empty">The drawings didn’t load. Try refreshing.</p>';});
+// Doot's sketches come after (a bigger file), and go on the end of the list
+fetch('sketches.json').then(r=>r.json()).then(s=>{
+  sketches=s.map(x=>({...x,blurb:'',sketch:true,moves:false}));
+  if(curated.length){all=shared.concat(curated,sketches).filter(d=>!removed.has(d.id));show();}
+  if(!starEl.hidden)openStarred(true);
+}).catch(()=>{});
 </script>
 </body>
 </html>
