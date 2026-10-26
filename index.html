@@ -281,14 +281,28 @@ const addLink=d=>{
 const PAGE=40,more=Object.assign(document.createElement('div'),{className:'more'});let upTo=0;
 new IntersectionObserver(([e])=>{if(e.isIntersecting)addCards();},{rootMargin:'800px'}).observe(more);
 let sources=[],srcAt=0,run=0,adding=false;
-const matches=(d,q)=>!q||[d.title,d.blurb,...(d.tags||[])].join(' ').toLowerCase().includes(q);
+// A search is words, each matched against the words of a drawing's title, about it and tags (not inside them:
+// "car" never finds "scarf"): each one followed by a space a whole word ("car " finds car and cars), the last one,
+// still being typed, the start of one ("car" finds cartoon too). Every word has to be there.
+function searchWords(raw){
+  const ws=forServer(raw.toLowerCase()).split(' ').filter(Boolean),typing=!/\s$/.test(raw);
+  return ws.map((w,i)=>({w,whole:!(typing&&i===ws.length-1)}));
+}
+const wordsOf=d=>[d.title,d.blurb,...(d.tags||[])].join(' ').toLowerCase().split(/[^\p{L}\p{N}'-]+/u).filter(Boolean);
+const fits=(word,{w,whole})=>whole?word===w||word===w+'s'||word===w+'es':word.startsWith(w);
+const matches=(d,q)=>{if(!q.length)return true;const ws=wordsOf(d);return q.every(t=>ws.some(x=>fits(x,t)));};
 const asShared=x=>({hidden:x.hidden,id:'s'+x.id,sid:x.id,uid:x.user_id,by:x.display_name,title:x.title,blurb:x.blurb,svg:x.svg,tags:x.tags||[],when:x.when_fits,moves:/<(animate|animateTransform|animateMotion|set)\b/i.test(x.svg)});
 // a search as the server takes it: its words and spaces only (it goes inside the server's own query)
 const forServer=q=>q.replace(/[^\p{L}\p{N} '-]/gu,' ').replace(/\s+/g,' ').trim();
 // shared drawings, newest first, [n] at a time from [from], that match [q] (title, about it, or a tag)
+// on the server, the same, each word as a regular expression from the start of a word (\m) to its end (\M), and a
+// tag the whole word
 function sharedQuery(q){
   let r=sb.from('shared_drawings_shown').select('*').eq('hidden',false);
-  const w=forServer(q);if(w)r=r.or(`title.ilike."*${w}*",blurb.ilike."*${w}*",tags.cs.{"${w}"}`);
+  for(const {w,whole} of q){
+    const re='\\\\m'+w.replace(/'/g,"''")+(whole?"(e?s)?\\\\M":'');
+    r=r.or(`title.imatch."${re}",blurb.imatch."${re}",tags.cs.{"${w}"}`);
+  }
   return r;
 }
 function newestShared(q,skip){
@@ -329,7 +343,7 @@ async function addCards(){
 }
 // the list afresh: as many as were showing (so a heart or a refresh doesn't jump back to the top), and at least a page
 async function show(){
-  const q=find.value.trim().toLowerCase(),n=Math.max(PAGE,upTo);
+  const q=searchWords(find.value),n=Math.max(PAGE,upTo);
   run++;adding=false;shown=[];srcAt=0;upTo=0;list.replaceChildren(more);
   if(sort.value==='hearts'){const withHearts=new Set(Object.keys(heartCount).filter(id=>heartCount[id]>0));
     sources=[hearted(q),newestShared(q,withHearts),local(q,d=>!withHearts.has(d.id))];}
