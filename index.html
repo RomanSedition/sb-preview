@@ -760,7 +760,10 @@ setLook(look==='smooth'?'smooth':'led');
 fetch('drawings.json').then(r=>r.json()).then(async d=>{curated=d;await loadShared();await loadCounts();await show();}).catch(()=>{list.innerHTML='<p class="empty">The drawings didn’t load. Try refreshing.</p>';});
 // Doot's sketches come after (a bigger file), and go on the end of the list
 fetch('sketches.json').then(r=>r.json()).then(s=>{
+  // in a fresh random order on each visit: the file has each subject's drawings together (up to four of a sleepy
+  // fox), so they'd come in runs of the same thing as the page scrolls
   sketches=s.map(x=>({...x,blurb:'',sketch:true,moves:false}));
+  for(let i=sketches.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[sketches[i],sketches[j]]=[sketches[j],sketches[i]];}
   if(curated.length)show();
   if(!starEl.hidden)openStarred(true);
 }).catch(()=>{});
